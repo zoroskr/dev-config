@@ -1,0 +1,74 @@
+{
+  "name": "@zoroskr/config",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Strict ESLint, TypeScript and commitlint config for Next.js + tRPC + Zod projects",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zoroskr/dev-config.git"
+  },
+  "exports": {
+    "./eslint": "./eslint/index.js",
+    "./eslint/rules/no-comments": "./eslint/rules/no-comments.cjs",
+    "./tsconfig/strict.json": "./tsconfig/strict.json",
+    "./commitlint": "./commitlint/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "commitlint/index.js",
+    "eslint/index.js",
+    "eslint/rules/no-comments.cjs",
+    "tsconfig/strict.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "peerDependencies": {
+    "@commitlint/cli": ">=19",
+    "@tanstack/eslint-plugin-query": "^5.0.0",
+    "eslint": "^9.13.0",
+    "eslint-plugin-formatjs": "^8.0.0",
+    "eslint-plugin-tailwindcss": "^3.17.0",
+    "typescript": "^5.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@commitlint/cli": {
+      "optional": true
+    },
+    "@tanstack/eslint-plugin-query": {
+      "optional": true
+    },
+    "eslint-plugin-formatjs": {
+      "optional": true
+    },
+    "eslint-plugin-tailwindcss": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@antfu/eslint-config": "^5.4.1",
+    "@commitlint/config-conventional": "^20.0.0",
+    "@eslint-react/eslint-plugin": "^1.53.1",
+    "@next/eslint-plugin-next": "^15.5.0",
+    "eslint-plugin-format": "^1.0.2",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-no-secrets": "^2.3.3",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.21",
+    "eslint-plugin-security": "^4.0.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.1.0",
+    "@tanstack/eslint-plugin-query": "^5.90.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-formatjs": "^8.1.1",
+    "eslint-plugin-tailwindcss": "^3.18.2",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.9.2"
+  }
+}
