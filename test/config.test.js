@@ -107,3 +107,55 @@ test('strict tsconfig rejects unchecked index access and undefined optional prop
   assert.match(run.stdout, /unchecked-index\.ts.*TS2322/);
   assert.match(run.stdout, /exact-optional\.ts.*TS2375/);
 });
+
+test('localRules join the local plugin next to no-comments', async () => {
+  const extra = {
+    meta: { type: 'problem', schema: [], messages: { found: 'extra rule ran' } },
+    create: context => ({ Program: node => context.report({ node, messageId: 'found' }) }),
+  };
+  const eslint = new ESLint({
+    cwd: app,
+    overrideConfigFile: true,
+    overrideConfig: await zoroskr({ tsconfigPath: join(app, 'tsconfig.json'), localRules: { extra } }, { rules: { 'local/extra': 'error' } }),
+  });
+  const [result] = await eslint.lintFiles([join(app, 'src/comment.ts')]);
+  const rules = errorRules(result.messages);
+  assert.ok(rules.includes('local/extra'));
+  assert.ok(rules.includes('local/no-comments'));
+});
+
+test('restrictedSyntax entries are added to the package selectors', async () => {
+  const restrictedSyntax = [{ selector: 'Identifier[name=\'forbiddenName\']', message: 'Project-specific restriction.' }];
+  const restricted = await lint('restricted.ts', { restrictedSyntax });
+  assert.ok(restricted.some(message => message.ruleId === 'no-restricted-syntax' && message.message === 'Project-specific restriction.'));
+  const assertion = await lint('assertion.ts', { restrictedSyntax });
+  assert.ok(assertion.some(message => message.ruleId === 'no-restricted-syntax' && message.message.includes('typescript-strict')));
+});
+
+test('i18nRules is exported and matches the rules the i18n option applies', async () => {
+  const { i18nRules } = await import('../eslint/index.js');
+  const rules = new Map(Object.entries(await rulesFor('literal-text.tsx', { i18n: true })));
+  for (const [name, entry] of Object.entries(i18nRules)) {
+    assert.equal(rules.get(name)?.[0], 1, name);
+    assert.deepEqual(rules.get(name)?.slice(1), entry.slice(1), name);
+  }
+});
+
+test('no-secrets also scans JSON files', async () => {
+  const messages = await lint('secrets.json');
+  assert.ok(messages.some(message => message.ruleId === 'no-secrets/no-secrets' && message.severity === 1));
+});
+
+test('unused imports stay errors inside editors', async () => {
+  assert.equal((await rulesFor('clean.ts', { isInEditor: true }))['unused-imports/no-unused-imports'][0], 2);
+});
+
+test('triple-slash references are errors', async () => {
+  assert.equal((await rulesFor('clean.ts'))['ts/triple-slash-reference'][0], 2);
+});
+
+test('core no-unused-vars is off and unused-imports owns unused variables', async () => {
+  const rules = await rulesFor('script.js');
+  assert.equal(rules['no-unused-vars']?.[0] ?? 0, 0);
+  assert.equal(rules['unused-imports/no-unused-vars'][0], 2);
+});

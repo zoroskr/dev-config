@@ -1,7 +1,7 @@
 {
   "name": "@zoroskr/config",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Strict ESLint, TypeScript and commitlint config for Next.js + tRPC + Zod projects",
   "license": "MIT",
   "repository": {

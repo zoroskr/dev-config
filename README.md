@@ -30,13 +30,24 @@ export default zoroskr(
 
 The first argument takes these options; any other key is passed to `antfu()` (`nextjs`, `ignores`, `typescript`, ...). Every argument after it is a flat config appended at the end, so it can override package rules.
 
-| Option         | Default | Effect                                                                                   |
-| -------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `tsconfigPath` | none    | Enables type-aware rules (`strict-boolean-expressions`, `no-unnecessary-condition`, ...) |
-| `react`        | `true`  | React rules and `jsx-a11y`                                                               |
-| `query`        | `false` | TanStack Query rules                                                                     |
-| `tailwind`     | `false` | Tailwind rules; pass an object to set `settings.tailwindcss`                             |
-| `i18n`         | `false` | Warns on literal strings in JSX and UI objects                                           |
+| Option             | Default | Effect                                                                                                   |
+| ------------------ | ------- | -------------------------------------------------------------------------------------------------------- |
+| `tsconfigPath`     | none    | Enables type-aware rules (`strict-boolean-expressions`, `no-unnecessary-condition`, ...)                 |
+| `react`            | `true`  | React rules and `jsx-a11y`                                                                               |
+| `query`            | `false` | TanStack Query rules                                                                                     |
+| `tailwind`         | `false` | Tailwind rules; pass an object to set `settings.tailwindcss`                                             |
+| `i18n`             | `false` | Warns on literal strings in JSX and UI objects                                                           |
+| `localRules`       | `{}`    | Extra rules registered in the `local` plugin, next to `local/no-comments`; enable them in a later config |
+| `restrictedSyntax` | `[]`    | Extra `no-restricted-syntax` entries for TypeScript files, appended to the package selectors             |
+
+The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
+
+```js
+import { i18nRules } from '@zoroskr/config/eslint';
+import formatjs from 'eslint-plugin-formatjs';
+
+export default [{ files: ['**/*.tsx'], plugins: { formatjs }, rules: i18nRules }];
+```
 
 What it enforces:
 

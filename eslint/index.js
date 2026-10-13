@@ -12,6 +12,21 @@ const securityWarnings = Object.fromEntries(
   Object.keys(security.configs.recommended.rules).map(rule => [rule, 'warn']),
 );
 
+const restrictedSyntax = [
+  {
+    selector: 'TSAsExpression:not(:has(TSTypeReference[typeName.name=\'const\']))',
+    message: 'Do not use type assertions (`as`). Prefer narrowing, schema parsing, `satisfies` or derived types; `as const` is allowed. See skill `typescript-strict`.',
+  },
+  {
+    selector: 'TSTypeAssertion',
+    message: 'Do not use `<Type>value` assertions. Prefer narrowing, schema parsing, `satisfies` or derived types. See skill `typescript-strict`.',
+  },
+  {
+    selector: ':matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > TSTypeAnnotation',
+    message: 'Do not annotate function return types; let TypeScript infer them. See skill `typescript-strict`.',
+  },
+];
+
 const typeScriptRules = {
   'ts/ban-ts-comment': 'error',
   'ts/consistent-type-definitions': ['error', 'type'],
@@ -34,22 +49,8 @@ const typeScriptRules = {
   'ts/no-useless-constructor': 'error',
   'ts/no-wrapper-object-types': 'error',
   'ts/prefer-literal-enum-member': 'error',
+  'ts/triple-slash-reference': 'error',
   'ts/unified-signatures': 'error',
-  'no-restricted-syntax': [
-    'error',
-    {
-      selector: 'TSAsExpression:not(:has(TSTypeReference[typeName.name=\'const\']))',
-      message: 'Do not use type assertions (`as`). Prefer narrowing, schema parsing, `satisfies` or derived types; `as const` is allowed. See skill `typescript-strict`.',
-    },
-    {
-      selector: 'TSTypeAssertion',
-      message: 'Do not use `<Type>value` assertions. Prefer narrowing, schema parsing, `satisfies` or derived types. See skill `typescript-strict`.',
-    },
-    {
-      selector: ':matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > TSTypeAnnotation',
-      message: 'Do not annotate function return types; let TypeScript infer them. See skill `typescript-strict`.',
-    },
-  ],
 };
 
 const typeAwareRules = {
@@ -68,7 +69,7 @@ const typeAwareRules = {
   }],
 };
 
-const i18nRules = {
+export const i18nRules = {
   'formatjs/no-literal-string-in-jsx': ['warn', {
     props: {
       include: [
@@ -77,6 +78,7 @@ const i18nRules = {
         ['img', 'alt'],
         ['*', 'label'],
       ],
+      exclude: [],
     },
   }],
   'formatjs/no-literal-string-in-object': ['warn', {
@@ -129,6 +131,8 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     query = false,
     tailwind = false,
     i18n = false,
+    localRules = {},
+    restrictedSyntax: extraRestrictedSyntax = [],
     typescript = {},
     ...antfuOptions
   } = options;
@@ -145,14 +149,14 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     },
     ...(react ? [{ ...jsxA11y.flatConfigs.recommended, name: 'zoroskr/jsx-a11y' }] : []),
     { ...security.configs.recommended, name: 'zoroskr/security' },
+    { name: 'zoroskr/no-secrets', plugins: { 'no-secrets': noSecrets }, rules: { 'no-secrets/no-secrets': 'warn' } },
     {
       name: 'zoroskr/base',
       files: [sourceFiles],
-      plugins: { 'local': { rules: { 'no-comments': noComments } }, 'no-secrets': noSecrets },
+      plugins: { local: { rules: { ...localRules, 'no-comments': noComments } } },
       rules: {
         ...securityWarnings,
         'local/no-comments': 'error',
-        'no-secrets/no-secrets': 'warn',
         'antfu/no-top-level-await': 'off',
         'eqeqeq': ['error', 'always', { null: 'ignore' }],
         'no-unneeded-ternary': 'error',
@@ -168,6 +172,8 @@ export default async function zoroskr(options = {}, ...userConfigs) {
         'node/prefer-global/process': 'off',
         'test/padding-around-all': 'error',
         'test/prefer-lowercase-title': 'off',
+        'no-unused-vars': 'off',
+        'unused-imports/no-unused-imports': 'error',
         'unused-imports/no-unused-vars': ['error', {
           args: 'after-used',
           argsIgnorePattern: '^_',
@@ -178,7 +184,11 @@ export default async function zoroskr(options = {}, ...userConfigs) {
         ...(react ? { 'react/prefer-destructuring-assignment': 'off' } : {}),
       },
     },
-    { name: 'zoroskr/typescript', files: typeScriptFiles, rules: typeScriptRules },
+    {
+      name: 'zoroskr/typescript',
+      files: typeScriptFiles,
+      rules: { ...typeScriptRules, 'no-restricted-syntax': ['error', ...restrictedSyntax, ...extraRestrictedSyntax] },
+    },
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),
     ...userConfigs,
