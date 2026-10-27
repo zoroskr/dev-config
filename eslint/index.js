@@ -3,6 +3,7 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 import noSecrets from 'eslint-plugin-no-secrets';
 import security from 'eslint-plugin-security';
 import noComments from './rules/no-comments.cjs';
+import requireProcedureOutput from './rules/require-procedure-output.cjs';
 
 const sourceFiles = '**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}';
 const typeScriptFiles = ['**/*.ts', '**/*.tsx'];
@@ -25,7 +26,103 @@ const restrictedSyntax = [
     selector: ':matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > TSTypeAnnotation',
     message: 'Do not annotate function return types; let TypeScript infer them. See skill `typescript-strict`.',
   },
+  {
+    selector: 'ExpressionStatement[directive=\'server-only\']',
+    message: 'Use `import \'server-only\';` — a bare \'server-only\' string is a no-op directive. See skill `trpc-layered-backend`.',
+  },
 ];
+
+const zodConstruction = {
+  selector: 'CallExpression[callee.object.name=\'z\']',
+  message: 'Do not build Zod schemas in services or repositories; import them from a schema file. See skill `trpc-layered-backend`.',
+};
+
+const unknownValue = `[typeArguments.params.1.type='${'TSUnknown'}Keyword']`;
+const unknownRecord = `TSTypeReference[typeName.name='Record']${unknownValue}`;
+
+const recordPatches = [
+  `VariableDeclarator > Identifier > TSTypeAnnotation > ${unknownRecord}`,
+  `:function > Identifier.params > TSTypeAnnotation > ${unknownRecord}`,
+].map(selector => ({
+  selector,
+  message: 'Type patches from the canonical schema, never `Record<string, unknown>`. See skill `trpc-layered-backend`.',
+}));
+
+const serviceExportsOnlyFunctions = [
+  'ExportNamedDeclaration > TSTypeAliasDeclaration',
+  'ExportNamedDeclaration > TSInterfaceDeclaration',
+  'ExportNamedDeclaration > VariableDeclaration > VariableDeclarator:not([init.type=/^(ArrowFunctionExpression|FunctionExpression)$/])',
+  'ExportNamedDeclaration[source]',
+  'ExportAllDeclaration',
+  'ClassDeclaration',
+].map(selector => ({
+  selector,
+  message: 'A service module exports only functions: no types, constants, classes or re-exports; import types from the schema file. See skill `trpc-layered-backend`.',
+}));
+
+const policyConstantSuffixes = ['_TTL', '_LIFETIME', '_WINDOW', '_CHUNK_SIZE', '_EXPIRATION'].join('|');
+
+const serviceSyntax = [
+  {
+    selector: 'ThrowStatement > NewExpression[callee.name=\'Error\']',
+    message: 'Only `TRPCError` leaves a service; `new Error` becomes a generic INTERNAL_SERVER_ERROR. See skill `trpc-layered-backend`.',
+  },
+  zodConstruction,
+  ...serviceExportsOnlyFunctions,
+  ...recordPatches,
+  {
+    selector: `Program > VariableDeclaration > VariableDeclarator[id.name=/(${policyConstantSuffixes})(_|$)|^MAX_|_MAX_/]`,
+    message: 'Policy constants (TTL, window, limit, chunk size) live in a constants file, not at service module scope. See skill `trpc-layered-backend`.',
+  },
+];
+
+const repositoryImportMessage = 'Repositories never import tRPC or services; they return `null`/`false` and the service translates. See skill `trpc-layered-backend`.';
+
+const layeredBackendLayers = [
+  { layer: 'services', files: '**/*.service.ts', selectors: serviceSyntax, rules: {} },
+  {
+    layer: 'repositories',
+    files: '**/*.repository.ts',
+    selectors: [zodConstruction, ...recordPatches],
+    rules: {
+      'no-console': ['error', {}],
+      'no-restricted-imports': ['error', {
+        paths: [{ name: '@trpc/server', message: repositoryImportMessage }],
+        patterns: [{ group: ['**/*.service', '**/services/**'], message: repositoryImportMessage }],
+      }],
+    },
+  },
+  {
+    layer: 'routers',
+    files: '**/*.router.ts',
+    selectors: ['TryStatement', 'ThrowStatement'].map(selector => ({
+      selector,
+      message: 'Routers are thin: no try/catch or throw; the service owns errors and translates them to `TRPCError`. See skill `trpc-layered-backend`.',
+    })),
+    rules: { 'local/require-procedure-output': 'error' },
+  },
+  {
+    layer: 'schemas',
+    files: '**/*.schema.ts',
+    selectors: [{
+      selector: 'Property[key.name=\'success\'] > CallExpression[callee.property.name=\'literal\']',
+      message: 'Mutation outputs are `z.void()` unless the caller needs data, never `{ success: literal }`. See skill `trpc-layered-backend`.',
+    }],
+    rules: {},
+  },
+];
+
+function layeredBackendConfigs(layeredBackend, baseRestrictedSyntax) {
+  if (!layeredBackend) {
+    return [];
+  }
+  const globs = new Map(typeof layeredBackend === 'object' ? Object.entries(layeredBackend) : []);
+  return layeredBackendLayers.map(({ layer, files, selectors, rules }) => ({
+    name: `zoroskr/layered-backend/${layer}`,
+    files: [globs.get(layer) ?? files].flat(),
+    rules: { ...rules, 'no-restricted-syntax': ['error', ...baseRestrictedSyntax, ...selectors] },
+  }));
+}
 
 const typeScriptRules = {
   'ts/ban-ts-comment': 'error',
@@ -133,6 +230,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     i18n = false,
     localRules = {},
     restrictedSyntax: extraRestrictedSyntax = [],
+    layeredBackend = false,
     typescript = {},
     ...antfuOptions
   } = options;
@@ -153,7 +251,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     {
       name: 'zoroskr/base',
       files: [sourceFiles],
-      plugins: { local: { rules: { ...localRules, 'no-comments': noComments } } },
+      plugins: { local: { rules: { ...localRules, 'no-comments': noComments, 'require-procedure-output': requireProcedureOutput } } },
       rules: {
         ...securityWarnings,
         'local/no-comments': 'error',
@@ -189,6 +287,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
       files: typeScriptFiles,
       rules: { ...typeScriptRules, 'no-restricted-syntax': ['error', ...restrictedSyntax, ...extraRestrictedSyntax] },
     },
+    ...layeredBackendConfigs(layeredBackend, [...restrictedSyntax, ...extraRestrictedSyntax]),
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),
     ...userConfigs,

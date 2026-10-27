@@ -39,6 +39,7 @@ The first argument takes these options; any other key is passed to `antfu()` (`n
 | `i18n`             | `false` | Warns on literal strings in JSX and UI objects                                                           |
 | `localRules`       | `{}`    | Extra rules registered in the `local` plugin, next to `local/no-comments`; enable them in a later config |
 | `restrictedSyntax` | `[]`    | Extra `no-restricted-syntax` entries for TypeScript files, appended to the package selectors             |
+| `layeredBackend`   | `false` | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs  |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
 
@@ -56,6 +57,18 @@ What it enforces:
 - No `any`, no non-null `!`, `type` over `interface`, type-only imports.
 - Strict boolean expressions without nullable or string/number shortcuts.
 - Security and secret-detection rules as warnings.
+- `import 'server-only';`, never the bare `'server-only';` no-op directive.
+
+With `layeredBackend` (skill `trpc-layered-backend`), default globs `**/*.{service,repository,router,schema}.ts`:
+
+| Layer          | Rejects                                                                                                                           |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `services`     | `throw new Error`, `z.*` schemas, non-function exports, re-exports, classes, `Record<...>` patches, module-scope policy constants |
+| `repositories` | `z.*` schemas, `Record<...>` patches, `console`, imports of `@trpc/server` or services                                            |
+| `routers`      | `try`, `throw`, and procedures without `.output()` (`local/require-procedure-output`)                                             |
+| `schemas`      | `{ success: z.literal(...) }` outputs                                                                                             |
+
+Layer blocks repeat the package and `restrictedSyntax` selectors, since flat config replaces `no-restricted-syntax` per block.
 
 ## TypeScript
 
