@@ -6,7 +6,7 @@ module.exports = {
   meta: {
     type: 'problem',
     schema: [],
-    messages: { forbidden: 'Comments are forbidden, including JSDoc. Keep only supported tooling directives.' },
+    messages: { forbidden: 'Comments are forbidden, including JSDoc. Keep only supported tooling directives. See skill `code-hygiene`.' },
   },
   create(context) {
     return {

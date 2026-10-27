@@ -44,7 +44,7 @@ const rejected = [
   ['a.repository.ts', 'import { run } from \'../services/run\';\n\nexport const find = () => run();\n', 'no-restricted-imports', /trpc-layered-backend/],
   ['a.router.ts', 'export async function get() {\n  try {\n    return await read();\n  } catch {\n    return null;\n  }\n}\n', 'no-restricted-syntax', /thin/],
   ['a.router.ts', 'export function get() {\n  throw new TRPCError({ code: \'NOT_FOUND\' });\n}\n', 'no-restricted-syntax', /thin/],
-  ['a.router.ts', 'export const itemRouter = router({ get: procedure.input(input).query(get) });\n', 'local/require-procedure-output', /^Every tRPC procedure declares \.output\(\); see skill `trpc-layered-backend`\.$/],
+  ['a.router.ts', 'export const itemRouter = router({ get: procedure.input(input).query(get) });\n', 'local/require-procedure-output', /^Every tRPC procedure declares \.output\(\)\. See skill `trpc-layered-backend`\.$/],
   ['a.router.ts', 'export const itemRouter = router({ save: procedure.use(auth).input(input).mutation(save) });\n', 'local/require-procedure-output', /\.output\(\)/],
   ['a.router.ts', 'export const itemRouter = router({ watch: procedure.subscription(watch) });\n', 'local/require-procedure-output', /\.output\(\)/],
   ['a.schema.ts', 'import { z } from \'zod\';\n\nexport const resultSchema = z.object({ success: z.literal(true) });\n', 'no-restricted-syntax', /z\.void\(\)/],

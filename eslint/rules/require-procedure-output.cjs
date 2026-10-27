@@ -23,7 +23,7 @@ module.exports = {
   meta: {
     type: 'problem',
     schema: [],
-    messages: { missingOutput: 'Every tRPC procedure declares .output(); see skill `trpc-layered-backend`.' },
+    messages: { missingOutput: 'Every tRPC procedure declares .output(). See skill `trpc-layered-backend`.' },
   },
   create(context) {
     return {
