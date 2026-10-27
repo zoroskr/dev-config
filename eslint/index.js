@@ -41,8 +41,7 @@ const unknownValue = `[typeArguments.params.1.type='${'TSUnknown'}Keyword']`;
 const unknownRecord = `TSTypeReference[typeName.name='Record']${unknownValue}`;
 
 const recordPatches = [
-  `VariableDeclarator > Identifier > TSTypeAnnotation > ${unknownRecord}`,
-  `:function > Identifier.params > TSTypeAnnotation > ${unknownRecord}`,
+  unknownRecord,
 ].map(selector => ({
   selector,
   message: 'Type patches from the canonical schema, never `Record<string, unknown>`. See skill `trpc-layered-backend`.',
@@ -53,6 +52,8 @@ const serviceExportsOnlyFunctions = [
   'ExportNamedDeclaration > TSInterfaceDeclaration',
   'ExportNamedDeclaration > VariableDeclaration > VariableDeclarator:not([init.type=/^(ArrowFunctionExpression|FunctionExpression)$/])',
   'ExportNamedDeclaration[source]',
+  'ExportNamedDeclaration[declaration=null][source=null]',
+  'ExportDefaultDeclaration',
   'ExportAllDeclaration',
   'ClassDeclaration',
 ].map(selector => ({

@@ -61,12 +61,12 @@ What it enforces:
 
 With `layeredBackend` (skill `trpc-layered-backend`), default globs `**/*.{service,repository,router,schema}.ts`:
 
-| Layer          | Rejects                                                                                                                           |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `services`     | `throw new Error`, `z.*` schemas, non-function exports, re-exports, classes, `Record<...>` patches, module-scope policy constants |
-| `repositories` | `z.*` schemas, `Record<...>` patches, `console`, imports of `@trpc/server` or services                                            |
-| `routers`      | `try`, `throw`, and procedures without `.output()` (`local/require-procedure-output`)                                             |
-| `schemas`      | `{ success: z.literal(...) }` outputs                                                                                             |
+| Layer          | Rejects                                                                                                                                                                |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services`     | `throw new Error`, `z.*` schemas, non-function, local-list and default exports, re-exports, classes, `Record<string, unknown>` anywhere, module-scope policy constants |
+| `repositories` | `z.*` schemas, `Record<string, unknown>` anywhere, `console`, imports of `@trpc/server` or services                                                                    |
+| `routers`      | `try`, `throw`, and procedures without `.output()` (`local/require-procedure-output`)                                                                                  |
+| `schemas`      | `{ success: z.literal(...) }` outputs                                                                                                                                  |
 
 Layer blocks repeat the package and `restrictedSyntax` selectors, since flat config replaces `no-restricted-syntax` per block.
 
