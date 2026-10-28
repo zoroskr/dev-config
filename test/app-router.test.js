@@ -90,6 +90,7 @@ const tsconfig = JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@/*
 const gate = { appRouter: { gateCallees: ['requirePermission'] } };
 const gatedPage = page('  await requirePermission({ resource: \'orders\', action: \'read\' });\n  return <OrdersContainer />;\n');
 const leadsPage = { 'src/app/leads/page.tsx': '' };
+const leadsIndexTree = { 'src/app/leads/(index)/page.tsx': '', 'src/app/leads/[id]/page.tsx': '' };
 const ordersTree = {
   'src/app/orders/page.tsx': page('  return null;\n'),
   'src/app/orders/details/page.tsx': page('  return null;\n'),
@@ -213,6 +214,25 @@ const rejected = [
   ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { isEditing: boolean };\n\nexport function Foo({ isEditing }: Props) {\n  return isEditing ? <span /> : null;\n}\n', [MODE_PROP]],
   ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { isEditMode(): boolean };\n\nexport function Foo({ isEditMode }: Props) {\n  return isEditMode() ? <span /> : null;\n}\n', [MODE_PROP]],
   ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { readonly isEditMode?: boolean };\n\nexport function Foo(props: Props) {\n  return props.isEditMode === true ? <span /> : null;\n}\n', [MODE_PROP]],
+  ['F2', 'src/app/orders/page.tsx', 'import OrdersPage from \'./OrdersPage\';\n\nexport default (OrdersPage satisfies Page);\n', [BARREL]],
+  ['F2', 'src/app/orders/orders.ts', 'import { Orders } from \'./orders.repository\';\n\nconst Aliased = (Orders as Repository);\n\nexport { Aliased };\n', [BARREL]],
+  ['F3', 'src/app/leads/LeadTable.tsx', component('LeadTable'), [routeSegment('LeadTable.tsx')], { tree: leadsIndexTree }],
+  ['F3', 'src/app/leads/LeadRow/LeadRow.tsx', component('LeadRow'), [routeSegment('LeadRow.tsx')], { tree: leadsIndexTree }],
+  ['F3', 'src/app/faqs/Faq.tsx', component('Faq'), [routeSegment('Faq.tsx')], { tree: { 'src/app/faqs/(index)/page.tsx': '' } }],
+  ['F3', 'src/app/leads/LeadTable.tsx', component('LeadTable'), [routeSegment('LeadTable.tsx')], { tree: { 'src/app/leads/[id]/edit/page.tsx': '' } }],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import * as zod from \'zod\';\n\nexport const LeadForm = () => zod.z.object({});\n', [ZOD_TSX]],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import { z } from \'zod\';\n\nexport const LeadForm = () => z.coerce.number();\n', [ZOD_TSX]],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import { iso } from \'zod\';\n\nexport const LeadForm = () => iso.datetime();\n', [ZOD_TSX]],
+  ['F5', 'src/app/orders/page.tsx', 'type A = import(\'../users/(global)/a\').A;\n\nexport default function Page(props: A) {\n  return props;\n}\n', [globalScope('../users/(global)/a', 'src/app/users')]],
+  ['F5', 'src/app/orders/page.tsx', 'export default async function Page() {\n  return import(`../users/(global)/a`);\n}\n', [globalScope('../users/(global)/a', 'src/app/users')]],
+  ['F5', 'src/app/orders/page.tsx', 'export default async function Page() {\n  return import(\'../users/(global)/a\');\n}\n', [globalScope('../users/(global)/a', 'src/app/users')]],
+  ['F6', 'src/app/old/page.tsx', 'import { redirect as go } from \'next/navigation\';\n\nexport default function Page() {\n  go(\'/new\');\n}\n', [STATIC_REDIRECT]],
+  ['F7', 'src/app/dashboard/orders/page.tsx', 'export const dynamic = \'force-dynamic\';\n', [repeatedDynamic('force-dynamic', 'src/app/dashboard/layout.tsx')], { tree: { 'src/app/dashboard/layout.tsx': 'export const dynamic = (\'force-dynamic\' satisfies Dynamic);\n' } }],
+  ['F7', 'src/app/dashboard/orders/page.tsx', 'export const dynamic = \'force-dynamic\';\n', [repeatedDynamic('force-dynamic', 'src/app/dashboard/layout.tsx')], { tree: { 'src/app/dashboard/layout.tsx': 'export const dynamic = ((\'force-dynamic\') as Dynamic);\n' } }],
+  ['F10', 'src/server/caller.ts', 'const { createCallerFactory: make } = t;\n\nexport const factory = make(appRouter);\n', [SERVER_CALLER]],
+  ['F10', 'src/server/caller.ts', 'const { createCaller: build = fallback } = appRouter;\n\nexport const caller = build({});\n', [SERVER_CALLER]],
+  ['F11', 'src/app/orders/page.tsx', page('  return null;\n'), [indexPage('src/app/orders')], { tree: { 'src/app/orders/settings/billing/page.tsx': '' } }],
+  ['F11', 'src/app/orders/components/Foo/Foo.tsx', component('Foo'), [floatingComponents('src/app/orders')], { tree: { 'src/app/orders/[id]/edit/(index)/page.tsx': '' } }],
 ];
 
 for (const [row, file, code, expected, settings] of rejected) {
@@ -295,6 +315,16 @@ const accepted = [
   ['F11', 'src/app/orders/components/Foo/Foo.test.tsx', value, { tree: ordersTree }],
   ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { isOpen: boolean };\n\nexport function Foo({ isOpen }: Props) {\n  return isOpen ? <span /> : null;\n}\n'],
   ['F16', 'src/app/orders/orders.ts', 'export type Props = { isEditing: boolean };\n'],
+  ['F2', 'src/app/orders/orders.ts', 'import { load } from \'./load\';\n\nconst orders = (load() as Orders);\n\nexport { orders };\n'],
+  ['F3', 'src/app/leads/LeadTable.tsx', component('LeadTable'), { tree: { 'src/app/leads/(index)/components/Foo/Foo.tsx': '', 'src/app/leads/[id]/components/Bar/Bar.tsx': '' } }],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import { z } from \'zod\';\n\nexport const LeadForm = ({ error }: Props) => z.prettifyError(error);\n'],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import { flattenError, prettifyError, treeifyError, ZodError } from \'zod\';\n\nexport const LeadForm = ({ error }: Props) => [prettifyError(error), flattenError(error), treeifyError(error), error instanceof ZodError];\n'],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import * as zod from \'zod\';\n\nexport const LeadForm = ({ error }: Props) => zod.z.flattenError(error);\n'],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import type { z } from \'zod\';\n\nexport const LeadForm = (props: z.infer<Schema>) => props;\n'],
+  ['F6', 'src/app/old/page.tsx', 'import { go } from \'./go\';\n\nexport default function Page() {\n  go(\'/new\');\n}\n'],
+  ['F7', 'src/app/dashboard/orders/page.tsx', 'export const dynamic = \'force-dynamic\';\n', { tree: { 'src/app/dashboard/layout.tsx': '// export const dynamic = \'force-dynamic\';\nexport const revalidate = 0;\n' } }],
+  ['F10', 'src/server/caller.ts', 'const { make } = factories;\n\nexport const factory = make(appRouter);\n'],
+  ['F11', 'src/app/orders/page.tsx', page('  return null;\n'), { tree: { 'src/app/orders/settings/components/Foo/Foo.tsx': '', 'src/app/orders/settings/_parts/page.tsx': '', 'src/app/orders/settings/(global)/page.tsx': '' } }],
 ];
 
 for (const [row, file, code, settings] of accepted) {

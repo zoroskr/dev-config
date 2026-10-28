@@ -10,7 +10,15 @@ const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionDeclaration', 'Fu
 const TSCONFIG_NAMES = ['tsconfig.json', 'tsconfig.strict.json'];
 const LAYOUT_NAMES = ['layout.tsx', 'layout.ts'];
 const PAGE_NAMES = ['page.tsx', 'page.ts'];
-const DYNAMIC_EXPORT = /export\s+const\s+dynamic\b[^=]*=\s*(['"`])([^'"`]*)\1/u;
+const CATEGORIES = new Set(['components', 'constants', 'hooks', 'schemas', 'utils']);
+const GLOBAL_GROUP = '(global)';
+const TS_WRAPPER_KINDS = new Set([
+  ts.SyntaxKind.AsExpression,
+  ts.SyntaxKind.NonNullExpression,
+  ts.SyntaxKind.ParenthesizedExpression,
+  ts.SyntaxKind.SatisfiesExpression,
+  ts.SyntaxKind.TypeAssertionExpression,
+]);
 
 const cache = new Map();
 let cacheStart = 0;
@@ -163,11 +171,26 @@ const privateGlobalScope = (filename, target) => {
     .find(scope => scope !== null && !filename.startsWith(`${scope}/`)) ?? null;
 };
 
+const unwrapTs = node => (TS_WRAPPER_KINDS.has(node?.kind) ? unwrapTs(node.expression) : node);
+
+const isExported = statement => statement.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword) === true;
+
+const exportedDynamic = file => cached(`dynamic:${file}`, () => {
+  const source = ts.createSourceFile(file, readText(file) ?? '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
+  const initializer = source.statements
+    .filter(statement => ts.isVariableStatement(statement) && isExported(statement))
+    .flatMap(statement => statement.declarationList.declarations)
+    .find(declaration => ts.isIdentifier(declaration.name) && declaration.name.text === 'dynamic')
+    ?.initializer;
+  const value = unwrapTs(initializer);
+  return value !== undefined && (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) ? value.text : undefined;
+});
+
 const nearestDynamicLayout = (directory, appRoot) => {
   for (let current = directory; current.length >= appRoot.length; current = path.posix.dirname(current)) {
     for (const name of LAYOUT_NAMES.filter(layout => hasFile(current, layout))) {
       const file = `${current}/${name}`;
-      const value = DYNAMIC_EXPORT.exec(readText(file) ?? '')?.[2];
+      const value = exportedDynamic(file);
       if (value !== undefined) {
         return { file, value };
       }
@@ -233,7 +256,16 @@ const calleeName = (call) => {
 
 const isGroup = name => /^\(.+\)$/u.test(name);
 
+const isPrivate = name => /^[_@]/u.test(name);
+
+const isParam = name => /^\[.+\]$/u.test(name);
+
+const hasPageBelow = directory => hasPage(directory)
+  || childDirectories(directory).some(child => child !== GLOBAL_GROUP && !isPrivate(child) && !CATEGORIES.has(child) && hasPageBelow(`${directory}/${child}`));
+
 module.exports = {
+  CATEGORIES,
+  GLOBAL_GROUP,
   calleeName,
   childDirectories,
   defaultExportFunction,
@@ -242,7 +274,10 @@ module.exports = {
   hasDirective,
   hasFile,
   hasPage,
+  hasPageBelow,
   isGroup,
+  isParam,
+  isPrivate,
   nearestDynamicLayout,
   privateGlobalScope,
   resolveImport,

@@ -1,8 +1,7 @@
 const path = require('node:path');
-const { hasFile } = require('./app-router.cjs');
+const { CATEGORIES, GLOBAL_GROUP, childDirectories, hasFile, hasPageBelow, isGroup, isParam } = require('./app-router.cjs');
 const { matchesGlobs, relativeFilename } = require('./query-hooks.cjs');
 
-const CATEGORIES = new Set(['components', 'constants', 'hooks', 'schemas', 'utils']);
 const GENERIC_NAMES = new Set(['constants', 'helpers', 'options', 'schema', 'types', 'utils']);
 const SOURCE_EXTENSION = /\.tsx?$/u;
 const TEST_SUFFIX = /\.(?:test|spec|stories)$/u;
@@ -35,7 +34,8 @@ const pascalCase = name => name
   .map(part => `${part[0].toUpperCase()}${part.slice(1)}`)
   .join('');
 
-const isRouteSegment = directory => ROUTE_FILES.some(name => hasFile(directory, name));
+const isRouteSegment = directory => ROUTE_FILES.some(name => hasFile(directory, name))
+  || childDirectories(directory).some(child => (isGroup(child) || isParam(child)) && child !== GLOBAL_GROUP && hasPageBelow(`${directory}/${child}`));
 
 const looseInRouteSegment = directory => isRouteSegment(directory)
   || (PASCAL_CASE.test(path.posix.basename(directory)) && isRouteSegment(path.posix.dirname(directory)));

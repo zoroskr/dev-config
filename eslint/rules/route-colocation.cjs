@@ -1,28 +1,19 @@
 const path = require('node:path');
-const { childDirectories, displayPath, hasPage, isGroup, routeLocation } = require('./app-router.cjs');
+const { CATEGORIES, GLOBAL_GROUP, childDirectories, displayPath, hasPage, hasPageBelow, isGroup, isParam, isPrivate, routeLocation } = require('./app-router.cjs');
 
-const CATEGORIES = new Set(['components', 'constants', 'hooks', 'schemas', 'utils']);
 const PAGE_FILE = /^page\.tsx?$/u;
 
-const isPrivate = name => /^[_@]/u.test(name);
-const isStaticSegment = name => !isGroup(name) && !/^\[.+\]$/u.test(name) && !isPrivate(name);
+const isStaticSegment = name => !isGroup(name) && !isParam(name) && !isPrivate(name);
 const isRouteChild = name => !isGroup(name) && !isPrivate(name) && !CATEGORIES.has(name);
 
 const INDEX_GROUP = '(index)';
-const GLOBAL_GROUP = '(global)';
 
 const hasChildPage = (directory, accepts) => childDirectories(directory)
   .some(child => accepts(child) && hasPage(`${directory}/${child}`));
 
-const hasPageThroughGroups = directory => hasPage(directory)
-  || childDirectories(directory).some(child => isGroup(child) && child !== GLOBAL_GROUP && hasPageThroughGroups(`${directory}/${child}`));
-
-const hasPageBelow = directory => hasPage(directory)
-  || childDirectories(directory).some(child => child !== GLOBAL_GROUP && !isPrivate(child) && !CATEGORIES.has(child) && hasPageBelow(`${directory}/${child}`));
-
 const hasChildRoute = directory => childDirectories(directory).some((child) => {
   if (isRouteChild(child)) {
-    return hasPageThroughGroups(`${directory}/${child}`);
+    return hasPageBelow(`${directory}/${child}`);
   }
   return isGroup(child) && child !== INDEX_GROUP && child !== GLOBAL_GROUP && hasPageBelow(`${directory}/${child}`);
 });

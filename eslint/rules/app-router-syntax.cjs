@@ -6,8 +6,89 @@ const { importedName, zodImportSpecifier } = require('./zod-binding.cjs');
 const PAGE_FILE = /(?:^|\/)page\.tsx?$/u;
 const SERVER_ROUTE_FILE = /(?:^|\/)(?:page|layout|loading|template|default)\.tsx$/u;
 const REDIRECTS = new Set(['permanentRedirect', 'redirect']);
+const NAVIGATION_MODULE = 'next/navigation';
 const MODE_KEY = '/^(isEditing|isEditMode)$/';
 const CALLER_NAMES = new Set(['createCaller', 'createCallerFactory']);
+const ZOD_CONSTRUCTORS = new Set([
+  'any',
+  'array',
+  'base64',
+  'base64url',
+  'bigint',
+  'boolean',
+  'catch',
+  'cidrv4',
+  'cidrv6',
+  'cuid',
+  'cuid2',
+  'custom',
+  'date',
+  'discriminatedUnion',
+  'e164',
+  'email',
+  'emoji',
+  'enum',
+  'file',
+  'float32',
+  'float64',
+  'function',
+  'guid',
+  'hash',
+  'hex',
+  'hostname',
+  'instanceof',
+  'int',
+  'int32',
+  'int64',
+  'intersection',
+  'ipv4',
+  'ipv6',
+  'json',
+  'jwt',
+  'keyof',
+  'lazy',
+  'literal',
+  'looseObject',
+  'map',
+  'nan',
+  'nanoid',
+  'nativeEnum',
+  'never',
+  'nonoptional',
+  'null',
+  'nullable',
+  'nullish',
+  'number',
+  'object',
+  'optional',
+  'partialRecord',
+  'pipe',
+  'preprocess',
+  'promise',
+  'readonly',
+  'record',
+  'set',
+  'strictObject',
+  'string',
+  'stringbool',
+  'symbol',
+  'templateLiteral',
+  'transform',
+  'tuple',
+  'uint32',
+  'uint64',
+  'ulid',
+  'undefined',
+  'union',
+  'unknown',
+  'url',
+  'uuid',
+  'uuidv4',
+  'uuidv6',
+  'uuidv7',
+  'void',
+]);
+const ZOD_FACTORIES = new Set(['coerce', 'iso']);
 
 const onlyExpression = ({ body }) => {
   if (body.type !== 'BlockStatement') {
@@ -25,25 +106,60 @@ const onlyExpression = ({ body }) => {
 
 const isStaticPath = node => node?.type === 'Literal' || (node?.type === 'TemplateLiteral' && node.expressions.length === 0);
 
-const staticRedirect = (fn) => {
-  const call = unwrap(onlyExpression(fn));
-  return call?.type === 'CallExpression'
-    && call.callee.type === 'Identifier'
-    && REDIRECTS.has(call.callee.name)
-    && isStaticPath(call.arguments[0])
-    ? call
+const keyName = (key, computed) => (!computed && key.type === 'Identifier' ? key.name : staticString(key));
+
+const memberName = member => keyName(member.property, member.computed);
+
+const destructuredKey = (identifier) => {
+  const target = identifier.parent.type === 'AssignmentPattern' && identifier.parent.left === identifier ? identifier.parent : identifier;
+  const property = target.parent;
+  return property.type === 'Property' && property.value === target && property.parent.type === 'ObjectPattern'
+    ? keyName(property.key, property.computed)
     : null;
 };
 
-const isZodBinding = (scope, node) => node.type === 'Identifier' && (node.name === 'z' || zodImportSpecifier(scope, node.name) !== null);
+const importedFrom = (scope, name, source) => {
+  const [definition] = findVariable(scope, name)?.defs ?? [];
+  return definition?.type === 'ImportBinding'
+    && definition.node.type === 'ImportSpecifier'
+    && (source === null || definition.parent.source.value === source)
+    ? importedName(definition.node)
+    : null;
+};
 
-const isZodCall = (scope, { callee }) => isZodBinding(scope, callee.type === 'MemberExpression' ? callee.object : callee);
-
-const memberName = (member) => {
-  if (member.computed) {
-    return staticString(member.property);
+const staticRedirect = (sourceCode, fn) => {
+  const call = unwrap(onlyExpression(fn));
+  if (call?.type !== 'CallExpression' || call.callee.type !== 'Identifier' || !isStaticPath(call.arguments[0])) {
+    return null;
   }
-  return member.property.type === 'Identifier' ? member.property.name : null;
+  const { name } = call.callee;
+  return REDIRECTS.has(importedFrom(sourceCode.getScope(call), name, NAVIGATION_MODULE) ?? name) ? call : null;
+};
+
+const zodRoot = (scope, name) => {
+  const specifier = zodImportSpecifier(scope, name);
+  if (specifier === null) {
+    return name === 'z' ? [] : null;
+  }
+  return specifier.type === 'ImportSpecifier' && importedName(specifier) !== 'z' ? [importedName(specifier)] : [];
+};
+
+const zodPath = (scope, node) => {
+  if (node.type === 'Identifier') {
+    return zodRoot(scope, node.name);
+  }
+  const parent = node.type === 'MemberExpression' ? zodPath(scope, node.object) : null;
+  const name = parent === null ? null : memberName(node);
+  return name === null ? null : [...parent, name];
+};
+
+const isZodConstructor = (scope, { callee }) => {
+  const path = zodPath(scope, callee) ?? [];
+  const [kind, member, ...rest] = path[0] === 'z' ? path.slice(1) : path;
+  if (rest.length > 0) {
+    return false;
+  }
+  return member === undefined ? ZOD_CONSTRUCTORS.has(kind) : ZOD_FACTORIES.has(kind);
 };
 
 const callerName = (scope, { callee }) => {
@@ -54,10 +170,26 @@ const callerName = (scope, { callee }) => {
     return null;
   }
   const [definition] = findVariable(scope, callee.name)?.defs ?? [];
-  return definition?.type === 'ImportBinding' && definition.node.type === 'ImportSpecifier' ? importedName(definition.node) : callee.name;
+  const destructured = definition?.type === 'Variable' ? destructuredKey(definition.name) : null;
+  return importedFrom(scope, callee.name, null) ?? destructured ?? callee.name;
 };
 
-const isImportedBinding = (scope, node) => node.type === 'Identifier' && findVariable(scope, node.name)?.defs[0]?.type === 'ImportBinding';
+const isImport = (scope, node) => node?.type === 'Identifier' && findVariable(scope, node.name)?.defs[0]?.type === 'ImportBinding';
+
+const isImportedBinding = (scope, node) => {
+  const target = unwrap(node);
+  if (target?.type !== 'Identifier') {
+    return false;
+  }
+  const [definition] = findVariable(scope, target.name)?.defs ?? [];
+  if (definition?.type === 'ImportBinding') {
+    return true;
+  }
+  return definition?.type === 'Variable'
+    && definition.parent.kind === 'const'
+    && definition.node.id === definition.name
+    && isImport(scope, unwrap(definition.node.init));
+};
 
 const moduleExports = (sourceCode, node) => {
   if (node.type === 'ExportDefaultDeclaration') {
@@ -118,7 +250,7 @@ module.exports = {
     }
     if (inApp && filename.endsWith('.tsx')) {
       visitors.push(['CallExpression:exit', (node) => {
-        if (isZodCall(sourceCode.getScope(node), node)) {
+        if (isZodConstructor(sourceCode.getScope(node), node)) {
           context.report({ node, messageId: 'zodInTsx' });
         }
       }]);
@@ -138,7 +270,7 @@ module.exports = {
     if (inApp && PAGE_FILE.test(filename)) {
       visitors.push(['Program', () => {
         const page = defaultExportFunction(sourceCode);
-        const call = page === null ? null : staticRedirect(page);
+        const call = page === null ? null : staticRedirect(sourceCode, page);
         if (call !== null) {
           context.report({ node: call, messageId: 'staticRedirect' });
         }
