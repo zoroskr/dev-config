@@ -30,17 +30,19 @@ export default zoroskr(
 
 The first argument takes these options; any other key is passed to `antfu()` (`nextjs`, `ignores`, `typescript`, ...). Every argument after it is a flat config appended at the end, so it can override package rules.
 
-| Option             | Default | Effect                                                                                                    |
-| ------------------ | ------- | --------------------------------------------------------------------------------------------------------- |
-| `tsconfigPath`     | none    | Enables type-aware rules (`strict-boolean-expressions`, `no-unnecessary-condition`, `no-deprecated`, ...) |
-| `react`            | `true`  | React rules and `jsx-a11y`                                                                                |
-| `query`            | `false` | TanStack Query rules                                                                                      |
-| `tailwind`         | `false` | Tailwind rules; pass an object to set `settings.tailwindcss`                                              |
-| `i18n`             | `false` | Warns on literal strings in JSX and UI objects                                                            |
-| `localRules`       | `{}`    | Extra rules registered in the `local` plugin, next to `local/no-comments`; enable them in a later config  |
-| `restrictedSyntax` | `[]`    | Extra `no-restricted-syntax` entries for TypeScript files, appended to the package selectors              |
-| `layeredBackend`   | `false` | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs   |
-| `isomorphic`       | `false` | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`          |
+| Option                | Default  | Effect                                                                                                              |
+| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
+| `tsconfigPath`        | none     | Enables type-aware rules (`strict-boolean-expressions`, `no-unnecessary-condition`, `no-deprecated`, ...)           |
+| `react`               | `true`   | React rules and `jsx-a11y`                                                                                          |
+| `query`               | `false`  | TanStack Query rules, and hook returns destructured at the call site                                                |
+| `tailwind`            | `false`  | Tailwind rules; pass an object to set `settings.tailwindcss`                                                        |
+| `i18n`                | `false`  | Warns on literal strings in JSX and UI objects                                                                      |
+| `localRules`          | `{}`     | Extra rules registered in the `local` plugin, next to `local/no-comments`; enable them in a later config            |
+| `restrictedSyntax`    | `[]`     | Extra `no-restricted-syntax` entries for TypeScript files, appended to the package selectors                        |
+| `inferredReturnTypes` | `true`   | Bans function return annotations (type predicates and `asserts` pass); `false` removes the ban                      |
+| `envFiles`            | `env.ts` | Regex sources exempt from `local/no-process-env` (the validated env module); replace the default `(?:^\|/)env\.ts$` |
+| `layeredBackend`      | `false`  | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs             |
+| `isomorphic`          | `false`  | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`                    |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
 
@@ -53,9 +55,20 @@ export default [{ files: ['**/*.tsx'], plugins: { formatjs }, rules: i18nRules }
 
 What it enforces:
 
-- No comments, JSDoc included. Only tooling directives pass (`eslint-disable`, `@ts-expect-error`, `/// <reference>`, `organize-imports-ignore`).
-- No type assertions except `as const`, and no annotated function return types.
-- No `any`, no non-null `!`, `type` over `interface`, type-only imports.
+- No comments, JSDoc included. Only tooling directives pass (`eslint-disable`, `@ts-expect-error`, `/// <reference>`). A block-form `/* eslint-disable … */` naming `no-restricted-syntax`, `ts/no-explicit-any` or a `ts/no-unsafe-*` rule is rejected; disable those line by line (`eslint-disable-next-line` / `eslint-disable-line`).
+- Unused disable directives are errors (`linterOptions.reportUnusedDisableDirectives: 'error'`).
+- No type assertions except `as const`; the check reads each assertion's own type, so `({ a: 'x' as const }) as User` is rejected.
+- No annotated function return types, unless `inferredReturnTypes: false`. Type predicates (`value is T`, `asserts value is T`, `asserts value`) always pass.
+- No `any` and no non-null `!` (restricted-syntax selectors replace `ts/no-explicit-any` and `ts/no-non-null-assertion`, which are off), `type` over `interface`, type-only imports.
+- Outside test files (`*.test`, `*.spec`, `*.stories`): no `console.*` calls (the selector replaces `no-console`, which is off for production TypeScript; tests and JavaScript keep antfu's `no-console`) and no lazy `await import()`; use a static import and mock the boundary module in the test.
+- In test files: no `const fixture: T = { … }` or `[ … ]` with a non-empty literal; use `satisfies T`. Empty literals (`const ids: string[] = []`) pass.
+- With `query`: a `use(Mutation|Query|InfiniteQuery|SuspenseQuery|SuspenseInfiniteQuery)` method call assigned to a plain identifier (`const mutation = api.post.create.useMutation()`) is rejected; destructure it. Bare `useQuery()` calls and `useForm` are not covered.
+- No `process.env` (`local/no-process-env`) in TypeScript files: dotted, computed and destructured reads (`const { X } = process.env`, `const { env } = process`), also through `globalThis.process` or `globalThis`. Test files, `**/*.config.*`, `scripts/**` and the `envFiles` patterns are exempt, so the validated env module can read it:
+
+```js
+export default zoroskr({ envFiles: ['/src/env\\.ts$', '/src/server/env-adapter\\.ts$'] });
+```
+
 - Strict boolean expressions without nullable or string/number shortcuts.
 - Security and secret-detection rules as warnings.
 - `import 'server-only';`, never the bare `'server-only';` no-op directive.
@@ -81,7 +94,7 @@ With `layeredBackend` (skill `trpc-layered-backend`), default globs `**/*.{servi
 | `routers`      | `try`, `throw`, and procedures without `.output()` (`local/require-procedure-output`)                                                                                                                                         |
 | `schemas`      | `{ success: z.literal(...) }` outputs, `Record<string, unknown>` and unknown index signatures                                                                                                                                 |
 
-`Record<string, unknown>` means a `string` key; `Record<'a' | 'b', unknown>` passes. Layer blocks repeat the package and `restrictedSyntax` selectors, since flat config replaces `no-restricted-syntax` per block.
+`Record<string, unknown>` means a `string` key; `Record<'a' | 'b', unknown>` passes. Layer blocks repeat the package, production (`console`, `await import()`) and `restrictedSyntax` selectors, since flat config replaces `no-restricted-syntax` per block; the test-file block repeats the package and `restrictedSyntax` selectors too.
 
 With `isomorphic` (skill `zod-schemas`), two local rules guard code shared by client and server. Both are local rules, so a consumer's own `no-restricted-imports` block or the layer selectors never replace them.
 

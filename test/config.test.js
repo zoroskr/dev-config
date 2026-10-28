@@ -42,9 +42,9 @@ for (const [file, ruleId] of [
   ['assertion.ts', 'no-restricted-syntax'],
   ['return-type.ts', 'no-restricted-syntax'],
   ['comment.ts', 'local/no-comments'],
-  ['explicit-any.ts', 'ts/no-explicit-any'],
+  ['explicit-any.ts', 'no-restricted-syntax'],
   ['boolean-string.ts', 'ts/strict-boolean-expressions'],
-  ['non-null.ts', 'ts/no-non-null-assertion'],
+  ['non-null.ts', 'no-restricted-syntax'],
   ['missing-alt.tsx', 'jsx-a11y/alt-text'],
 ]) {
   test(`${file} reports ${ruleId} as an error`, async () => {

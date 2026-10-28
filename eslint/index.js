@@ -5,6 +5,7 @@ import security from 'eslint-plugin-security';
 import isomorphicBoundary from './rules/isomorphic-boundary.cjs';
 import noComments from './rules/no-comments.cjs';
 import noInlineZodInfer from './rules/no-inline-zod-infer.cjs';
+import noProcessEnv from './rules/no-process-env.cjs';
 import noSchemaDefault from './rules/no-schema-default.cjs';
 import noTypesFile from './rules/no-types-file.cjs';
 import noZodMessageParam from './rules/no-zod-message-param.cjs';
@@ -14,6 +15,7 @@ import serviceExportsFunctions from './rules/service-exports-functions.cjs';
 const sourceFiles = '**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}';
 const typeScriptFiles = ['**/*.ts', '**/*.tsx'];
 const testFiles = ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/*.stories.{ts,tsx}'];
+const processEnvIgnores = [...testFiles, '**/*.config.*', 'scripts/**'];
 
 const securityWarnings = Object.fromEntries(
   Object.keys(security.configs.recommended.rules).map(rule => [rule, 'warn']),
@@ -21,7 +23,7 @@ const securityWarnings = Object.fromEntries(
 
 const restrictedSyntax = [
   {
-    selector: 'TSAsExpression:not(:has(TSTypeReference[typeName.name=\'const\']))',
+    selector: 'TSAsExpression:not([typeAnnotation.type=\'TSTypeReference\'][typeAnnotation.typeName.name=\'const\'])',
     message: 'Do not use type assertions (`as`). Prefer narrowing, schema parsing, `satisfies` or derived types; `as const` is allowed. See skill `typescript-strict`.',
   },
   {
@@ -29,8 +31,12 @@ const restrictedSyntax = [
     message: 'Do not use `<Type>value` assertions. Prefer narrowing, schema parsing, `satisfies` or derived types. See skill `typescript-strict`.',
   },
   {
-    selector: ':matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > TSTypeAnnotation',
-    message: 'Do not annotate function return types; let TypeScript infer them. See skill `typescript-strict`.',
+    selector: 'TSAnyKeyword',
+    message: 'Do not use `any`; use `unknown` and narrow, parse the value, or type it. See skill `typescript-strict`.',
+  },
+  {
+    selector: 'TSNonNullExpression',
+    message: 'Do not use non-null assertions (`!`); narrow with a guard or handle the missing value. See skill `typescript-strict`.',
   },
   {
     selector: 'ExpressionStatement[directive=\'server-only\']',
@@ -50,6 +56,32 @@ const restrictedSyntax = [
     message: 'Use an `as const` array or `z.enum`, not a TS enum; derive the type with `(typeof VALUES)[number]`. See skill `zod-schemas`.',
   },
 ];
+
+const inferredReturnTypeSyntax = [{
+  selector: ':matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > TSTypeAnnotation:not([typeAnnotation.type=\'TSTypePredicate\'])',
+  message: 'Do not annotate function return types; let TypeScript infer them. See skill `typescript-strict`.',
+}];
+
+const queryHookSyntax = [{
+  selector: 'VariableDeclarator[id.type=\'Identifier\'] > CallExpression.init[callee.property.name=/^use(Mutation|Query|InfiniteQuery|SuspenseQuery|SuspenseInfiniteQuery)$/]',
+  message: 'Destructure hook returns at the call site. See skill `code-hygiene`.',
+}];
+
+const productionSyntax = [
+  {
+    selector: 'CallExpression[callee.object.name=\'console\']',
+    message: 'Do not call `console` in production code; log through the project\'s error reporter. See skill `typescript-strict`.',
+  },
+  {
+    selector: 'AwaitExpression > ImportExpression',
+    message: 'Do not lazy-load with `await import()`; use a static import and mock the boundary module in the test. See skill `code-hygiene`.',
+  },
+];
+
+const testFileSyntax = [{
+  selector: 'VariableDeclarator[id.typeAnnotation]:matches([init.type=\'ObjectExpression\'][init.properties.length>0], [init.type=\'ArrayExpression\'][init.elements.length>0])',
+  message: 'Use `satisfies T` for fixtures. See skill `typescript-strict`.',
+}];
 
 const zodConstruction = {
   selector: 'CallExpression[callee.object.name=\'z\']',
@@ -113,7 +145,6 @@ const layeredBackendLayers = [
     files: '**/*.repository.ts',
     selectors: [zodConstruction, ...recordPatches],
     rules: {
-      'no-console': ['error', {}],
       'no-restricted-imports': ['error', {
         paths: [{ name: '@trpc/server', message: repositoryImportMessage }],
         patterns: [{ group: ['**/*.service', '**/services/**'], message: repositoryImportMessage }],
@@ -140,7 +171,7 @@ const layeredBackendLayers = [
   },
 ];
 
-function layeredBackendConfigs(layeredBackend, baseRestrictedSyntax) {
+function layeredBackendConfigs(layeredBackend, productionRestrictedSyntax) {
   if (!layeredBackend) {
     return [];
   }
@@ -148,7 +179,7 @@ function layeredBackendConfigs(layeredBackend, baseRestrictedSyntax) {
   return layeredBackendLayers.map(({ layer, files, selectors, rules }) => ({
     name: `zoroskr/layered-backend/${layer}`,
     files: [globs.get(layer) ?? files].flat(),
-    rules: { ...rules, 'no-restricted-syntax': ['error', ...baseRestrictedSyntax, ...selectors] },
+    rules: { ...rules, 'no-restricted-syntax': ['error', ...productionRestrictedSyntax, ...selectors] },
   }));
 }
 
@@ -187,14 +218,14 @@ const typeScriptRules = {
   'ts/method-signature-style': 'error',
   'ts/no-dynamic-delete': 'error',
   'ts/no-empty-object-type': 'error',
-  'ts/no-explicit-any': 'error',
+  'ts/no-explicit-any': 'off',
   'ts/no-extraneous-class': 'error',
   'ts/no-import-type-side-effects': 'error',
   'ts/no-invalid-void-type': 'error',
   'ts/no-namespace': 'error',
   'ts/no-non-null-asserted-nullish-coalescing': 'error',
   'ts/no-non-null-asserted-optional-chain': 'error',
-  'ts/no-non-null-assertion': 'error',
+  'ts/no-non-null-assertion': 'off',
   'ts/no-require-imports': 'error',
   'ts/no-unsafe-function-type': 'error',
   'ts/no-unused-expressions': 'error',
@@ -289,10 +320,19 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     restrictedSyntax: extraRestrictedSyntax = [],
     layeredBackend = false,
     isomorphic = false,
+    inferredReturnTypes = true,
+    envFiles,
     typescript = {},
     ...antfuOptions
   } = options;
   const typeAware = tsconfigPath !== undefined;
+  const baseRestrictedSyntax = [
+    ...restrictedSyntax,
+    ...(inferredReturnTypes ? inferredReturnTypeSyntax : []),
+    ...(query ? queryHookSyntax : []),
+    ...extraRestrictedSyntax,
+  ];
+  const productionRestrictedSyntax = [...baseRestrictedSyntax, ...productionSyntax];
 
   return antfu(
     {
@@ -316,6 +356,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'isomorphic-boundary': isomorphicBoundary,
             'no-comments': noComments,
             'no-inline-zod-infer': noInlineZodInfer,
+            'no-process-env': noProcessEnv,
             'no-schema-default': noSchemaDefault,
             'no-types-file': noTypesFile,
             'no-zod-message-param': noZodMessageParam,
@@ -324,6 +365,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
           },
         },
       },
+      linterOptions: { reportUnusedDisableDirectives: 'error' },
       rules: {
         ...securityWarnings,
         'local/no-comments': 'error',
@@ -362,10 +404,30 @@ export default async function zoroskr(options = {}, ...userConfigs) {
         'local/no-inline-zod-infer': 'error',
         'local/no-types-file': 'error',
         'local/no-zod-message-param': 'error',
-        'no-restricted-syntax': ['error', ...restrictedSyntax, ...extraRestrictedSyntax],
+        'no-restricted-syntax': ['error', ...baseRestrictedSyntax],
       },
     },
-    ...layeredBackendConfigs(layeredBackend, [...restrictedSyntax, ...extraRestrictedSyntax]),
+    {
+      name: 'zoroskr/typescript-production',
+      files: typeScriptFiles,
+      ignores: testFiles,
+      rules: {
+        'no-console': 'off',
+        'no-restricted-syntax': ['error', ...productionRestrictedSyntax],
+      },
+    },
+    {
+      name: 'zoroskr/typescript-tests',
+      files: testFiles,
+      rules: { 'no-restricted-syntax': ['error', ...baseRestrictedSyntax, ...testFileSyntax] },
+    },
+    {
+      name: 'zoroskr/no-process-env',
+      files: typeScriptFiles,
+      ignores: processEnvIgnores,
+      rules: { 'local/no-process-env': ['error', ...(envFiles === undefined ? [] : [{ envFiles }])] },
+    },
+    ...layeredBackendConfigs(layeredBackend, productionRestrictedSyntax),
     ...isomorphicConfigs(isomorphic),
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),

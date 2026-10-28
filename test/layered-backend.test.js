@@ -47,7 +47,7 @@ const rejected = [
   ['a.service.ts', 'const limit = 10;\n\nexport default limit;\n', 'local/service-exports-functions', /exports only functions/],
   ['a.service.ts', 'export function update(patch: { [key: string]: unknown }) {\n  return patch;\n}\n', 'no-restricted-syntax', /canonical schema/],
   ['a.repository.ts', 'type Patch = { [field: string]: unknown };\n\nexport function update(patch: Patch) {\n  return patch;\n}\n', 'no-restricted-syntax', /canonical schema/],
-  ['a.repository.ts', 'export function find() {\n  console.error(\'x\');\n}\n', 'no-console', /console/],
+  ['a.repository.ts', 'export function find() {\n  console.error(\'x\');\n}\n', 'no-restricted-syntax', /`console`.*typescript-strict/],
   ['a.repository.ts', 'import { TRPCError } from \'@trpc/server\';\n\nexport const error = () => new TRPCError({ code: \'NOT_FOUND\' });\n', 'no-restricted-imports', /trpc-layered-backend/],
   ['a.repository.ts', 'import { run } from \'./run.service\';\n\nexport const find = () => run();\n', 'no-restricted-imports', /trpc-layered-backend/],
   ['a.repository.ts', 'import { run } from \'../services/run\';\n\nexport const find = () => run();\n', 'no-restricted-imports', /trpc-layered-backend/],
@@ -66,9 +66,7 @@ for (const [file, code, ruleId, message] of rejected) {
     assert.equal(messages.length, 1, JSON.stringify(messages));
     assert.equal(messages[0].ruleId, ruleId);
     assert.match(messages[0].message, message);
-    if (ruleId !== 'no-console') {
-      assert.match(messages[0].message, /trpc-layered-backend/);
-    }
+    assert.match(messages[0].message, /See skill `(?:trpc-layered-backend|typescript-strict)`\.$/);
   });
 }
 

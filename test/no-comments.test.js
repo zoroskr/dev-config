@@ -26,7 +26,11 @@ for (const code of [
   '// @ts-ignore\nconst value = 1;',
   '// @ts-check',
   '// @ts-nocheck',
-  '// organize-imports-ignore',
+  '/* eslint-disable-next-line ts/no-explicit-any */',
+  '// eslint-disable-next-line no-restricted-syntax -- legacy cast',
+  'const value = 1; // eslint-disable-line ts/no-unsafe-assignment',
+  '/* eslint-enable no-restricted-syntax */',
+  '/* eslint-disable no-console, ts/no-unsafe */',
   '/// <reference types="vitest/globals" />',
   '/// <reference path=\'./types.d.ts\' />',
   '/// <reference lib="esnext" />',
@@ -47,6 +51,7 @@ for (const code of [
   '//',
   '/**/',
   '/// ordinary text',
+  '// organize-imports-ignore',
   '// organize-imports-ignore because this is prose',
   '// @ts-expect-errorish',
   '// @ts-check explains something',
@@ -66,6 +71,24 @@ for (const code of [
   test(`rejects ${JSON.stringify(code)}`, () => {
     const messages = new Linter().verify(code, config);
     assert.equal(messages.some(message => message.fatal), false);
-    assert.equal(messages.filter(message => message.ruleId === 'local/no-comments' && message.severity === 2).length, 1);
+    const reported = messages.filter(message => message.ruleId === 'local/no-comments' && message.severity === 2);
+    assert.equal(reported.length, 1);
+    assert.match(reported[0].message, /^Comments are forbidden/);
+  });
+}
+
+for (const code of [
+  '/* eslint-disable no-restricted-syntax */',
+  '/* eslint-disable ts/no-explicit-any */',
+  '/* eslint-disable ts/no-unsafe-assignment, ts/no-unsafe-member-access */',
+  '/* eslint-disable no-console, ts/no-unsafe-call -- legacy module */',
+  '/*eslint-disable no-restricted-syntax*/',
+]) {
+  test(`rejects the block-form disable ${JSON.stringify(code)}`, () => {
+    const messages = new Linter().verify(code, config);
+    assert.equal(messages.some(message => message.fatal), false);
+    const reported = messages.filter(message => message.ruleId === 'local/no-comments' && message.severity === 2);
+    assert.equal(reported.length, 1);
+    assert.equal(reported[0].message, 'Do not disable `no-restricted-syntax`, `ts/no-explicit-any` or `ts/no-unsafe-*` for a whole block or file; use a line-scoped `eslint-disable-next-line` with a reason, or fix the code. See skill `typescript-strict`.');
   });
 }
