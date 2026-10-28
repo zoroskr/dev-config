@@ -4,6 +4,7 @@ import noSecrets from 'eslint-plugin-no-secrets';
 import security from 'eslint-plugin-security';
 import noComments from './rules/no-comments.cjs';
 import requireProcedureOutput from './rules/require-procedure-output.cjs';
+import serviceExportsFunctions from './rules/service-exports-functions.cjs';
 
 const sourceFiles = '**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}';
 const typeScriptFiles = ['**/*.ts', '**/*.tsx'];
@@ -39,9 +40,11 @@ const zodConstruction = {
 
 const unknownValue = `[typeArguments.params.1.type='${'TSUnknown'}Keyword']`;
 const unknownRecord = `TSTypeReference[typeName.name='Record']${unknownValue}`;
+const unknownIndexSignature = `TSIndexSignature > TSTypeAnnotation > ${'TSUnknown'}Keyword`;
 
 const recordPatches = [
   unknownRecord,
+  unknownIndexSignature,
 ].map(selector => ({
   selector,
   message: 'Type patches from the canonical schema, never `Record<string, unknown>`. See skill `trpc-layered-backend`.',
@@ -52,8 +55,6 @@ const serviceExportsOnlyFunctions = [
   'ExportNamedDeclaration > TSInterfaceDeclaration',
   'ExportNamedDeclaration > VariableDeclaration > VariableDeclarator:not([init.type=/^(ArrowFunctionExpression|FunctionExpression)$/])',
   'ExportNamedDeclaration[source]',
-  'ExportNamedDeclaration[declaration=null][source=null]',
-  'ExportDefaultDeclaration',
   'ExportAllDeclaration',
   'ClassDeclaration',
 ].map(selector => ({
@@ -80,7 +81,7 @@ const serviceSyntax = [
 const repositoryImportMessage = 'Repositories never import tRPC or services; they return `null`/`false` and the service translates. See skill `trpc-layered-backend`.';
 
 const layeredBackendLayers = [
-  { layer: 'services', files: '**/*.service.ts', selectors: serviceSyntax, rules: {} },
+  { layer: 'services', files: '**/*.service.ts', selectors: serviceSyntax, rules: { 'local/service-exports-functions': 'error' } },
   {
     layer: 'repositories',
     files: '**/*.repository.ts',
@@ -252,7 +253,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     {
       name: 'zoroskr/base',
       files: [sourceFiles],
-      plugins: { local: { rules: { ...localRules, 'no-comments': noComments, 'require-procedure-output': requireProcedureOutput } } },
+      plugins: { local: { rules: { ...localRules, 'no-comments': noComments, 'require-procedure-output': requireProcedureOutput, 'service-exports-functions': serviceExportsFunctions } } },
       rules: {
         ...securityWarnings,
         'local/no-comments': 'error',

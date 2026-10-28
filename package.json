@@ -14,13 +14,15 @@
     "./eslint/rules/require-procedure-output": "./eslint/rules/require-procedure-output.cjs",
     "./tsconfig/strict.json": "./tsconfig/strict.json",
     "./commitlint": "./commitlint/index.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./eslint/rules/service-exports-functions": "./eslint/rules/service-exports-functions.cjs"
   },
   "files": [
     "commitlint/index.js",
     "eslint/index.js",
     "eslint/rules/no-comments.cjs",
     "eslint/rules/require-procedure-output.cjs",
+    "eslint/rules/service-exports-functions.cjs",
     "tsconfig/strict.json"
   ],
   "engines": {

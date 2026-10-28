@@ -7,7 +7,7 @@ import zoroskr from '../eslint/index.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = join(root, 'test/fixtures/app');
-const layeredRules = new Set(['no-restricted-syntax', 'no-restricted-imports', 'no-console', 'local/require-procedure-output']);
+const layeredRules = new Set(['no-restricted-syntax', 'no-restricted-imports', 'no-console', 'local/require-procedure-output', 'local/service-exports-functions']);
 
 async function lint(file, code, options = { layeredBackend: true }) {
   const eslint = new ESLint({ cwd: app, overrideConfigFile: true, overrideConfig: await zoroskr(options) });
@@ -40,8 +40,13 @@ const rejected = [
   ['a.repository.ts', 'export function update(patch: Record<string, unknown>) {\n  return patch;\n}\n', 'no-restricted-syntax', /canonical schema/],
   ['a.service.ts', 'export function update(params: { id: string; payload: Record<string, unknown> }) {\n  return params;\n}\n', 'no-restricted-syntax', /canonical schema/],
   ['a.repository.ts', 'type Patch = Record<string, unknown>;\n\nexport function update(patch: Patch) {\n  return patch;\n}\n', 'no-restricted-syntax', /canonical schema/],
-  ['a.service.ts', 'const value = 1;\n\nexport { value };\n', 'no-restricted-syntax', /exports only functions/],
-  ['a.service.ts', 'export default { value: 1 };\n', 'no-restricted-syntax', /exports only functions/],
+  ['a.service.ts', 'const value = 1;\n\nexport { value };\n', 'local/service-exports-functions', /exports only functions/],
+  ['a.service.ts', 'export default { value: 1 };\n', 'local/service-exports-functions', /exports only functions/],
+  ['a.service.ts', 'type Item = { id: string };\n\nexport type { Item };\n', 'local/service-exports-functions', /exports only functions/],
+  ['a.service.ts', 'import { read } from \'./a.repository\';\n\nexport { read };\n', 'local/service-exports-functions', /exports only functions/],
+  ['a.service.ts', 'const limit = 10;\n\nexport default limit;\n', 'local/service-exports-functions', /exports only functions/],
+  ['a.service.ts', 'export function update(patch: { [key: string]: unknown }) {\n  return patch;\n}\n', 'no-restricted-syntax', /canonical schema/],
+  ['a.repository.ts', 'type Patch = { [field: string]: unknown };\n\nexport function update(patch: Patch) {\n  return patch;\n}\n', 'no-restricted-syntax', /canonical schema/],
   ['a.repository.ts', 'export function find() {\n  console.error(\'x\');\n}\n', 'no-console', /console/],
   ['a.repository.ts', 'import { TRPCError } from \'@trpc/server\';\n\nexport const error = () => new TRPCError({ code: \'NOT_FOUND\' });\n', 'no-restricted-imports', /trpc-layered-backend/],
   ['a.repository.ts', 'import { run } from \'./run.service\';\n\nexport const find = () => run();\n', 'no-restricted-imports', /trpc-layered-backend/],
@@ -68,6 +73,9 @@ for (const [file, code, ruleId, message] of rejected) {
 }
 
 const accepted = [
+  ['a.service.ts', 'function read() {\n  return 1;\n}\n\nexport { read };\n'],
+  ['a.service.ts', 'const read = () => 1;\n\nexport { read };\n'],
+  ['a.service.ts', 'export default function read() {\n  return 1;\n}\n'],
   ['a.service.ts', 'export function route(status: Status) {\n  const handlers: Record<Status, number> = { on: 1 };\n  return handlers[status];\n}\n'],
   ['a.service.ts', 'import { TRPCError } from \'@trpc/server\';\n\nexport function run() {\n  throw new TRPCError({ code: \'NOT_FOUND\' });\n}\n'],
   ['a.util.ts', 'export function run() {\n  throw new Error(\'x\');\n}\n'],
