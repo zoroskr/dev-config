@@ -7,10 +7,13 @@ import noComments from './rules/no-comments.cjs';
 import noConsole from './rules/no-console.cjs';
 import noInlineZodInfer from './rules/no-inline-zod-infer.cjs';
 import noProcessEnv from './rules/no-process-env.cjs';
+import noQueryIsLoading from './rules/no-query-is-loading.cjs';
 import noSchemaDefault from './rules/no-schema-default.cjs';
 import noTypesFile from './rules/no-types-file.cjs';
 import noZodMessageParam from './rules/no-zod-message-param.cjs';
+import queryContainerStates from './rules/query-container-states.cjs';
 import queryHookDestructuring from './rules/query-hook-destructuring.cjs';
+import queryPlacement from './rules/query-placement.cjs';
 import requireProcedureOutput from './rules/require-procedure-output.cjs';
 import serviceExportsFunctions from './rules/service-exports-functions.cjs';
 
@@ -24,6 +27,8 @@ const processEnvIgnores = [...productionIgnores, '**/*.config.*'];
 const securityWarnings = Object.fromEntries(
   Object.keys(security.configs.recommended.rules).map(rule => [rule, 'warn']),
 );
+
+const filtersHook = '[id.name=/^use[A-Z]\\w*Filters$/]';
 
 const restrictedSyntax = [
   {
@@ -58,6 +63,17 @@ const restrictedSyntax = [
   {
     selector: 'TSEnumDeclaration',
     message: 'Use an `as const` array or `z.enum`, not a TS enum; derive the type with `(typeof VALUES)[number]`. See skill `zod-schemas`.',
+  },
+  ...[
+    `FunctionDeclaration${filtersHook}`,
+    `VariableDeclarator${filtersHook}:matches([init.type='ArrowFunctionExpression'], [init.type='FunctionExpression'])`,
+  ].map(selector => ({
+    selector,
+    message: 'Do not declare a plural `use*Filters` hook; compose the single-purpose URL filter hooks in the Container. See skill `react-data-containers`.',
+  })),
+  {
+    selector: 'TSDeclareFunction[id.name=/^use[A-Z]/]',
+    message: 'Do not overload `use*` hooks; create a dedicated hook. See skill `react-data-containers`.',
   },
 ];
 
@@ -197,6 +213,62 @@ function layeredBackendConfigs(layeredBackend, productionRestrictedSyntax) {
     files: [globs.get(layer) ?? files].flat(),
     rules: { ...rules, 'no-restricted-syntax': ['error', ...productionRestrictedSyntax, ...selectors] },
   }));
+}
+
+const mutateCall = ':matches([callee.name=/^mutate(Async)?$/], [callee.property.name=/^mutate(Async)?$/])';
+
+const querySyntax = [{
+  selector: `CallExpression:matches([callee.name='useEffect'], [callee.property.name='useEffect']) > :function CallExpression${mutateCall}`,
+  message: 'Do not call `mutate`/`mutateAsync` inside `useEffect`; fire the mutation from an event handler. See skill `react-data-containers`.',
+}];
+
+const paginationName = '[name=/^(totalPages|startItem|endItem)$/]';
+
+const containerSyntax = [
+  {
+    selector: ':matches(JSXOpeningElement[name.name=/^[A-Z]/], JSXOpeningElement[name.type=\'JSXMemberExpression\']) > JSXAttribute[name.name!=\'style\'] > JSXExpressionContainer > ObjectExpression',
+    message: 'Do not pass an inline object literal to a component prop; build `const props` first. See skill `react-data-containers`.',
+  },
+  ...[
+    `VariableDeclarator > Identifier.id${paginationName}`,
+    `VariableDeclarator ObjectPattern > Property > Identifier.value${paginationName}`,
+    `VariableDeclarator ArrayPattern > Identifier${paginationName}`,
+    `VariableDeclarator :matches(ObjectPattern > Property, ArrayPattern) > AssignmentPattern > Identifier.left${paginationName}`,
+    `FunctionDeclaration > Identifier.id${paginationName}`,
+  ].map(selector => ({
+    selector,
+    message: 'Do not declare `totalPages`, `startItem` or `endItem` in a Container; take `page` and `pageSize` from the pagination hook and let the pagination components derive the rest. See skill `react-data-containers`.',
+  })),
+];
+
+const queryDefaults = {
+  containers: ['**/*Container.tsx'],
+  providers: ['**/*Provider.tsx'],
+  errorComponent: 'Error',
+};
+
+function queryConfigs(query, productionRestrictedSyntax) {
+  if (!query) {
+    return [];
+  }
+  const { containers, providers, errorComponent } = { ...queryDefaults, ...(typeof query === 'object' ? query : {}) };
+  return [
+    {
+      name: 'zoroskr/query/placement',
+      files: typeScriptFiles,
+      ignores: productionIgnores,
+      rules: { 'local/query-placement': ['error', { containers, providers }] },
+    },
+    {
+      name: 'zoroskr/query/containers',
+      files: containers,
+      ignores: productionIgnores,
+      rules: {
+        'local/query-container-states': ['error', { errorComponent }],
+        'no-restricted-syntax': ['error', ...productionRestrictedSyntax, ...containerSyntax],
+      },
+    },
+  ];
 }
 
 const isomorphicDefaults = {
@@ -344,6 +416,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
   const typeAware = tsconfigPath !== undefined;
   const baseRestrictedSyntax = [
     ...restrictedSyntax,
+    ...(query ? querySyntax : []),
     ...(inferredReturnTypes ? inferredReturnTypeSyntax : []),
     ...extraRestrictedSyntax,
   ];
@@ -373,10 +446,13 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'no-console': noConsole,
             'no-inline-zod-infer': noInlineZodInfer,
             'no-process-env': noProcessEnv,
+            'no-query-is-loading': noQueryIsLoading,
             'no-schema-default': noSchemaDefault,
             'no-types-file': noTypesFile,
             'no-zod-message-param': noZodMessageParam,
+            'query-container-states': queryContainerStates,
             'query-hook-destructuring': queryHookDestructuring,
+            'query-placement': queryPlacement,
             'require-procedure-output': requireProcedureOutput,
             'service-exports-functions': serviceExportsFunctions,
           },
@@ -421,7 +497,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
         'local/no-inline-zod-infer': 'error',
         'local/no-types-file': 'error',
         'local/no-zod-message-param': 'error',
-        ...(query ? { 'local/query-hook-destructuring': 'error' } : {}),
+        ...(query ? { 'local/query-hook-destructuring': 'error', 'local/no-query-is-loading': 'error' } : {}),
         'no-restricted-syntax': ['error', ...baseRestrictedSyntax],
       },
     },
@@ -454,6 +530,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     },
     ...layeredBackendConfigs(layeredBackend, productionRestrictedSyntax),
     ...isomorphicConfigs(isomorphic),
+    ...queryConfigs(query, productionRestrictedSyntax),
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),
     ...userConfigs,

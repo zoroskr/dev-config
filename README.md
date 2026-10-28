@@ -30,19 +30,19 @@ export default zoroskr(
 
 The first argument takes these options; any other key is passed to `antfu()` (`nextjs`, `ignores`, `typescript`, ...). Every argument after it is a flat config appended at the end, so it can override package rules.
 
-| Option                | Default  | Effect                                                                                                              |
-| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------- |
-| `tsconfigPath`        | none     | Enables type-aware rules (`strict-boolean-expressions`, `no-unnecessary-condition`, `no-deprecated`, ...)           |
-| `react`               | `true`   | React rules and `jsx-a11y`                                                                                          |
-| `query`               | `false`  | TanStack Query rules, and hook returns destructured at the call site                                                |
-| `tailwind`            | `false`  | Tailwind rules; pass an object to set `settings.tailwindcss`                                                        |
-| `i18n`                | `false`  | Warns on literal strings in JSX and UI objects                                                                      |
-| `localRules`          | `{}`     | Extra rules registered in the `local` plugin, next to `local/no-comments`; enable them in a later config            |
-| `restrictedSyntax`    | `[]`     | Extra `no-restricted-syntax` entries for TypeScript files, appended to the package selectors                        |
-| `inferredReturnTypes` | `true`   | Bans function return annotations (type predicates and `asserts` pass); `false` removes the ban                      |
-| `envFiles`            | `env.ts` | Regex sources exempt from `local/no-process-env` (the validated env module); replace the default `(?:^\|/)env\.ts$` |
-| `layeredBackend`      | `false`  | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs             |
-| `isomorphic`          | `false`  | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`                    |
+| Option                | Default  | Effect                                                                                                               |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `tsconfigPath`        | none     | Enables type-aware rules (`strict-boolean-expressions`, `no-unnecessary-condition`, `no-deprecated`, ...)            |
+| `react`               | `true`   | React rules and `jsx-a11y`                                                                                           |
+| `query`               | `false`  | TanStack Query rules and data-container rules; pass `{ containers, providers, errorComponent }` to override defaults |
+| `tailwind`            | `false`  | Tailwind rules; pass an object to set `settings.tailwindcss`                                                         |
+| `i18n`                | `false`  | Warns on literal strings in JSX and UI objects                                                                       |
+| `localRules`          | `{}`     | Extra rules registered in the `local` plugin, next to `local/no-comments`; enable them in a later config             |
+| `restrictedSyntax`    | `[]`     | Extra `no-restricted-syntax` entries for TypeScript files, appended to the package selectors                         |
+| `inferredReturnTypes` | `true`   | Bans function return annotations (type predicates and `asserts` pass); `false` removes the ban                       |
+| `envFiles`            | `env.ts` | Regex sources exempt from `local/no-process-env` (the validated env module); replace the default `(?:^\|/)env\.ts$`  |
+| `layeredBackend`      | `false`  | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs              |
+| `isomorphic`          | `false`  | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`                     |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
 
@@ -79,6 +79,7 @@ export default zoroskr({ envFiles: ['/src/env\\.ts$', '/src/server/env-adapter\\
 - No TS `enum` (use an `as const` array or `z.enum`) and no `inferRouterOutputs` / `inferRouterInputs`, imported, renamed, qualified or through `import('@trpc/server')` (import the type exported beside its schema).
 - No Zod 4 `message` param (`local/no-zod-message-param`): an object argument with a `message` key in a call chain rooted at a `zod` import, e.g. `z.string().min(1, { message })`; pass `{ error: '…' }`. Shapes and data (`z.object({ message })`, also through a renamed import such as `object as obj`; `.parse()`, `z.parse(schema, data)`, `.default()`, `.meta()`) and `ctx.addIssue({ message })` pass. The rule only sees chains rooted at the `zod` import: a schema derived and held in a variable (`userSchema.omit({ id: true }).refine(fn, { message })`) is out of reach without type information, so the skill rule still applies there.
 - No `types.ts` or `*.types.ts` files (`local/no-types-file`; `.d.ts` passes).
+- No plural `use*Filters` hook declarations (`function useItemFilters`, `const useItemFilters = () => …`) and no `use*` overloads (`TSDeclareFunction`); single-purpose hooks such as `useSearchFilter` pass.
 - No `z.infer|input|output<typeof schema>` (any `zod` import: namespace, default, renamed `z`, `ns.z` of a namespace or default import, or named `infer`/`input`/`output`) outside a type alias of a module-level `const` schema of the same file (`local/no-inline-zod-infer`). In schema files a local schema may be derived anywhere, an imported one never. Schema files match the rule option `schemaFiles`, regex sources that replace the default `['\\.schema\\.[cm]?tsx?$', '/schemas/.+\\.[cm]?tsx?$']`:
 
 ```js
@@ -87,6 +88,23 @@ export default zoroskr({}, {
   rules: { 'local/no-inline-zod-infer': ['error', { schemaFiles: ['\\.schema(?:-adapter)?\\.ts$', '/schemas/'] }] },
 });
 ```
+
+With `query` (skill `react-data-containers`), these rules join `local/query-hook-destructuring`. Query hooks are `useQuery`, `useInfiniteQuery`, `useSuspenseQuery` and `useSuspenseInfiniteQuery` imported from `@tanstack/react-query` (renamed imports included) or called as a method on any object (`api.items.list.useQuery()`); a local function or another module's `useQuery` passes. Test files and `scripts/**` are exempt from the placement and container rules.
+
+| Key              | Default                 | Rule                                                                                                                                                                                                                                                  |
+| ---------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `containers`     | `['**/*Container.tsx']` | `local/query-placement`: query hooks only in containers and providers, never inside a function named `use[A-Z]…` (also in those files), at most one per container file. `local/query-container-states` and the container selectors run on these files |
+| `providers`      | `['**/*Provider.tsx']`  | Files where `local/query-placement` accepts any number of queries                                                                                                                                                                                     |
+| `errorComponent` | `'Error'`               | JSX element the container `isError` branch must return                                                                                                                                                                                                |
+
+Globs are matched against the path relative to the ESLint working directory (`**/`, `*`, `?` and `{a,b}`).
+
+- `local/no-query-is-loading` (all TypeScript files): `isLoading` destructured from, or read on, a query or `useMutation` result; use `isPending`.
+- `local/query-container-states`: in a container function that destructures `useQuery` or `useInfiniteQuery`, the function body has `if (isPending) return <XSkeleton />` before `if (isError) return <Error … />`. It reports a missing pending or error branch, an error branch before the pending one, a pending branch that does not return a `*Skeleton` element, an error branch that does not return `errorComponent`, and any `||` that combines the query's `isPending` with another check (`if (isPending || data == null)`). Suspense queries need no branches.
+- Container selectors: an inline object literal passed to a component prop (`<Items filters={{ status }} />`, `<UI.Table config={{ … }} />`; `style` and intrinsic elements pass), and `totalPages`, `startItem` or `endItem` declared as a variable, destructured binding or function.
+- All TypeScript files: `mutate` or `mutateAsync` (bare or as a method) called anywhere inside a `useEffect` callback, nested callbacks included; call it from an event handler.
+
+The container block repeats the package, production (`import()`) and `restrictedSyntax` selectors, like the layer blocks.
 
 With `layeredBackend` (skill `trpc-layered-backend`), default globs `**/*.{service,repository,router,schema}.ts`:
 

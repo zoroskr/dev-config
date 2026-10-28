@@ -1,19 +1,4 @@
-const { exportedName, findVariable } = require('./process-env.cjs');
-
-const QUERY_HOOK = /^use(?:Mutation|Query|InfiniteQuery|SuspenseQuery|SuspenseInfiniteQuery)$/u;
-const QUERY_MODULE = '@tanstack/react-query';
-
-const isQueryHookImport = (scope, name) => {
-  const [definition] = findVariable(scope, name)?.defs ?? [];
-  return definition?.type === 'ImportBinding'
-    && definition.parent.source.value === QUERY_MODULE
-    && definition.node.type === 'ImportSpecifier'
-    && QUERY_HOOK.test(exportedName(definition.node.imported));
-};
-
-const TS_WRAPPERS = new Set(['TSAsExpression', 'TSNonNullExpression', 'TSSatisfiesExpression', 'TSTypeAssertion']);
-
-const unwrap = node => (TS_WRAPPERS.has(node?.type) ? unwrap(node.expression) : node);
+const { RESULT_HOOK, isHookCall, unwrap } = require('./query-hooks.cjs');
 
 module.exports = {
   meta: {
@@ -27,14 +12,7 @@ module.exports = {
     return {
       'VariableDeclarator[id.type=\'Identifier\']'(declarator) {
         const node = unwrap(declarator.init);
-        if (node?.type !== 'CallExpression') {
-          return;
-        }
-        const { callee } = node;
-        const isHook = callee.type === 'MemberExpression'
-          ? !callee.computed && QUERY_HOOK.test(callee.property.name)
-          : callee.type === 'Identifier' && isQueryHookImport(context.sourceCode.getScope(node), callee.name);
-        if (isHook) {
+        if (isHookCall(context.sourceCode, node, RESULT_HOOK)) {
           context.report({ node, messageId: 'destructure' });
         }
       },
