@@ -1,4 +1,4 @@
-const { isMemberNamed } = require('./process-env.cjs');
+const { isKeyNamed, isMemberNamed } = require('./process-env.cjs');
 
 const CALL_ARGUMENT_MATCHERS = [
   'toHaveBeenCalledWith',
@@ -30,6 +30,14 @@ module.exports = {
       MemberExpression(node) {
         const record = MOCK_CALL_RECORDS.find(name => isMemberNamed(node, name));
         if (record !== undefined && isMemberNamed(node.object, 'mock')) {
+          context.report({ node, messageId: 'callArguments', data: { name: `mock.${record}` } });
+        }
+      },
+      VariableDeclarator(node) {
+        const record = node.id.type === 'ObjectPattern' && isMemberNamed(node.init, 'mock')
+          ? MOCK_CALL_RECORDS.find(name => node.id.properties.some(property => isKeyNamed(property, name)))
+          : undefined;
+        if (record !== undefined) {
           context.report({ node, messageId: 'callArguments', data: { name: `mock.${record}` } });
         }
       },

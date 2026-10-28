@@ -1,4 +1,4 @@
-const { exportedName, findVariable, isMemberNamed } = require('./process-env.cjs');
+const { exportedName, findVariable, isKeyNamed, isMemberNamed } = require('./process-env.cjs');
 
 const VITEST_NAMES = new Set(['vi', 'vitest']);
 const MOCK_METHODS = ['mock', 'doMock'];
@@ -40,6 +40,13 @@ module.exports = {
       CallExpression(node) {
         const { callee } = node;
         if (MOCK_METHODS.some(method => isMemberNamed(callee, method)) && isVitestObject(context.sourceCode.getScope(node), callee.object)) {
+          context.report({ node, messageId: 'productionMock' });
+        }
+      },
+      VariableDeclarator(node) {
+        if (node.id.type === 'ObjectPattern'
+          && node.id.properties.some(property => MOCK_METHODS.some(method => isKeyNamed(property, method)))
+          && isVitestObject(context.sourceCode.getScope(node), node.init)) {
           context.report({ node, messageId: 'productionMock' });
         }
       },

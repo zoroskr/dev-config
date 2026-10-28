@@ -139,7 +139,9 @@ const testConsoleSyntax = [
   'CallExpression[callee.object.type=\'MemberExpression\'][callee.object.object.name=\'globalThis\'][callee.object.property.name=\'console\']',
   'VariableDeclarator[init.name=\'console\']',
   'VariableDeclarator[init.type=\'MemberExpression\'][init.object.name=\'globalThis\'][init.property.name=\'console\']',
-  'ImportDeclaration[source.value=/^(node:)?console$/]',
+  'VariableDeclarator[init.type=\'MemberExpression\'][init.object.name=\'console\']',
+  'VariableDeclarator[init.type=\'MemberExpression\'][init.object.type=\'MemberExpression\'][init.object.object.name=\'globalThis\'][init.object.property.name=\'console\']',
+  'ImportDeclaration[source.value=/^(node:)?console$/] > ImportSpecifier',
 ].map(selector => ({
   selector,
   message: 'Do not call `console` in tests; assert on behavior, or spy with `vi.spyOn(console, …)` when the log is the behavior. See skill `vitest-testing`.',

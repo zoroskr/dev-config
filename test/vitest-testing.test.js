@@ -88,6 +88,8 @@ const rejected = [
   ['F1', unitTest, 'const { log } = console;\nlog(\'x\');\n', [CONSOLE]],
   ['F1', unitTest, 'const { error: report } = globalThis.console;\nreport(\'x\');\n', [CONSOLE]],
   ['F1', unitTest, 'const out = console;\nout.info(\'x\');\n', [CONSOLE]],
+  ['F1', unitTest, 'const error = console.error;\nerror(\'x\');\n', [CONSOLE]],
+  ['F1', unitTest, 'const warn = globalThis.console.warn;\nwarn(\'x\');\n', [CONSOLE]],
   ['F1', unitTest, 'import { log } from \'node:console\';\n\nlog(\'x\');\n', [CONSOLE]],
   ['F1', unitTest, 'import { Console } from \'console\';\n\nexport const logger = new Console(process.stdout);\n', [CONSOLE]],
   ['F2', unitTest, `${vitest}describe('orders', () => {\n  vi.mock('./order');\n});\n`, [HOISTED]],
@@ -101,6 +103,8 @@ const rejected = [
   ['F2', 'src/orders/__fixtures__/order.ts', 'vi.mock(\'./db\');\n', [PRODUCTION_MOCK]],
   ['F2', 'src/orders/order.ts', 'import * as v from \'vitest\';\n\nv.vi.doMock(\'./db\');\n', [PRODUCTION_MOCK]],
   ['F2', 'src/orders/order.ts', 'import * as v from \'vitest\';\n\nv.vi.mock(\'./db\');\nv.vitest.mock(\'./auth\');\n', [PRODUCTION_MOCK, PRODUCTION_MOCK]],
+  ['F2', 'src/orders/order.ts', 'import { vi } from \'vitest\';\n\nconst { doMock } = vi;\ndoMock(\'./db\');\n', [PRODUCTION_MOCK]],
+  ['F2', 'src/orders/order.ts', 'const { mock: register } = vitest;\nregister(\'./db\');\n', [PRODUCTION_MOCK]],
   ['F2', 'src/testing/other-setup.ts', 'vi.mock(\'./db\');\n', [PRODUCTION_MOCK], { options: setupFiles }],
   ['F3', unitTest, 'import { http } from \'msw\';\n\nexport const handler = http;\n', [httpMock('msw')]],
   ['F3', unitTest, 'import { setupServer } from \'msw/node\';\n\nexport const server = setupServer();\n', [httpMock('msw/node')]],
@@ -126,12 +130,16 @@ const rejected = [
   ['F4', integrationTest, expectCall('expect(vi.fn()).not[\'toHaveBeenCalledWith\'](1);'), [callArgs('toHaveBeenCalledWith')]],
   ['F4', integrationTest, expectCall('const fn = vi.fn();\n  expect(fn.mock.calls[0]).toEqual([1]);'), [callArgs('mock.calls')]],
   ['F4', integrationTest, expectCall('const fn = vi.fn();\n  expect(fn.mock.lastCall).toEqual([1]);'), [callArgs('mock.lastCall')]],
+  ['F4', integrationTest, expectCall('const fn = vi.fn();\n  const { calls } = fn.mock;\n  expect(calls[0]).toEqual([1]);'), [callArgs('mock.calls')]],
+  ['F4', integrationTest, expectCall('const fn = vi.fn();\n  const { lastCall: last } = fn.mock;\n  expect(last).toEqual([1]);'), [callArgs('mock.lastCall')]],
   ['F4', 'src/orders/Order.integration.test.tsx', expectCall('expect(vi.fn()).toHaveBeenCalledWith(1);'), [callArgs('toHaveBeenCalledWith')]],
 ];
 
 const accepted = [
   ['F1', unitTest, `${vitest}it('logs', () => {\n  const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);\n  expect(log).not.toHaveBeenCalled();\n});\n`],
   ['F1', unitTest, `${vitest}const logger = { log: vi.fn() };\nlogger.log('x');\n`],
+  ['F1', unitTest, `import console from 'node:console';\n${vitest}it('logs', () => {\n  expect(vi.spyOn(console, 'error')).not.toHaveBeenCalled();\n});\n`],
+  ['F1', unitTest, `import * as nodeConsole from 'node:console';\n${vitest}it('logs', () => {\n  expect(vi.spyOn(nodeConsole, 'log')).not.toHaveBeenCalled();\n});\n`],
   ['F2', unitTest, `${vitest}vi.mock('./order');\n\ndescribe('orders', () => {\n  it('mocks', () => {\n    vi.mocked(Date.now).mockReturnValue(1);\n  });\n});\n`],
   ['F2', integrationTest, `${vitest}vi.mock('./db', () => ({ db: {} }));\n\nit('reads', async () => {\n  const { db } = await import('./db');\n  expect(db).toBeDefined();\n});\n`],
   ['F2', 'src/testing/setup.ts', 'vi.mock(\'./db\');\nvi.doMock(\'./auth\');\n', { options: setupFiles }],
@@ -147,6 +155,8 @@ const accepted = [
   ['F4', unitTest, expectCall('expect(vi.fn()).toHaveBeenCalledWith(1);')],
   ['F4', unitTest, expectCall('const fn = vi.fn();\n  expect(fn.mock.calls).toHaveLength(0);')],
   ['F4', integrationTest, expectCall('const fn = vi.fn();\n  expect(fn.mock.results).toHaveLength(0);')],
+  ['F4', integrationTest, expectCall('const fn = vi.fn();\n  const { results } = fn.mock;\n  expect(results).toHaveLength(0);')],
+  ['F2', 'src/orders/order.ts', 'import { vi } from \'vitest\';\n\nconst { fn } = vi;\nexport const save = fn();\n'],
 ];
 
 for (const [row, file, code, expected, settings] of rejected) {
