@@ -11,6 +11,7 @@ const formRules = new Set(['local/rhf-form-contract', 'local/no-schema-default']
 const forms = { forms: true };
 
 const INLINE_DEFAULTS = 'Do not write literal `defaultValues` inline in `useForm`; export a `<form>FormDefaults` object from the schema file, `satisfies` its type. See skill `rhf-zod-forms`.';
+const DEFAULTS_LOCATION = 'Do not declare a `*FormDefaults` object in a `.tsx` file; export it from the form schema file, `satisfies` its type. See skill `rhf-zod-forms`.';
 const DEFAULTS_SATISFIES = 'Type a `*FormDefaults` object with `satisfies` against its form type: `export const xFormDefaults = { … } satisfies XForm;`. See skill `rhf-zod-forms`.';
 const RESOLVER = 'Validate `useForm` with `resolver: zodResolver(formSchema)` from `@hookform/resolvers/zod`. See skill `rhf-zod-forms`.';
 const REGISTER = 'Use the controlled form components (`Controller`) instead of `register`. See skill `rhf-zod-forms`.';
@@ -36,8 +37,11 @@ const resolver = 'resolver: zodResolver(leadFormSchema)';
 const component = body => `${imports}export function LeadForm() {\n${body}  return null;\n}\n`;
 const useFormWith = options => component(`  const form = useForm({ ${options} });\n  void form;\n`);
 const mutation = '  const { mutateAsync } = api.leads.create.useMutation();\n';
+const roles = body => component(`  const { mutateAsync: updateRole } = api.members.updateRole.useMutation();\n  const onSave = async (changes: Change[]) => {\n${body}  };\n  void onSave;\n`);
 const submit = body => component(`${mutation}  const onSubmit = async (values: LeadForm) => {\n${body}  };\n  void onSubmit;\n`);
 const zodImport = 'import { z } from \'zod\';\n\n';
+const formField = (typeImport, signature, body) => `import type { ${typeImport} } from 'react-hook-form';\n\n${signature}\n${body}}\n`;
+const stateImports = `import { zodResolver } from '@hookform/resolvers/zod';\nimport { useForm, useFormState } from 'react-hook-form';\n\nexport function LeadForm() {\n  const { control } = useForm({ ${resolver} });\n`;
 
 const rejected = [
   [formFile, useFormWith(`${resolver}, defaultValues: { name: '' }`), [INLINE_DEFAULTS]],
@@ -83,6 +87,42 @@ const rejected = [
   [formFile, submit('    try {\n      notify();\n    } catch {\n      await mutateAsync(values);\n    }\n'), [MUTATE_ASYNC]],
   [formFile, submit('    try {\n      run(async () => {\n        await mutateAsync(values);\n      });\n    } catch {\n      fail();\n    }\n'), [MUTATE_ASYNC]],
   [formFile, `${imports}import { useMutation as useSave } from '@tanstack/react-query';\n\nexport function LeadForm() {\n  const { mutateAsync: save } = useSave(options);\n  const onSubmit = async () => {\n    await save();\n  };\n  return onSubmit;\n}\n`, [MUTATE_ASYNC]],
+  [formFile, useFormWith(`${resolver}, defaultValues: { tags: ['default'] }`), [INLINE_DEFAULTS]],
+  [formFile, useFormWith(`${resolver}, defaultValues: { ranges: [[0, 10]], name: lead.name }`), [INLINE_DEFAULTS]],
+  [formFile, component(`  const defaults = { name: '' };\n  const form = useForm({ ${resolver}, defaultValues: defaults });\n  void form;\n`), [INLINE_DEFAULTS]],
+  [formFile, `${imports}export const leadFormDefaults = { name: lead.name } satisfies LeadForm;\n`, [DEFAULTS_LOCATION]],
+  [formFile, `${imports}const leadFormDefaults = { name: '' };\n\nexport function LeadForm() {\n  return useForm({ ${resolver}, defaultValues: leadFormDefaults });\n}\n`, [DEFAULTS_LOCATION, INLINE_DEFAULTS]],
+  [formFile, component('  const options = { defaultValues: leadFormDefaults };\n  const form = useForm(options);\n  void form;\n'), [RESOLVER]],
+  [formFile, component('  const options = { resolver: yupResolver(schema) } as const;\n  const form = useForm(options);\n  void form;\n'), [RESOLVER]],
+  [formFile, component('  const options = { resolver: zodResolver(schema), mode: \'onChange\' };\n  const form = useForm(options);\n  void form;\n'), [SUBMIT_GATE]],
+  [formFile, component('  const resolver = yupResolver(schema);\n  const form = useForm({ resolver });\n  void form;\n'), [RESOLVER]],
+  [formFile, component('  let resolver = zodResolver(schema);\n  const form = useForm({ resolver });\n  void form;\n'), [RESOLVER]],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  const control = form.control;\n  void control.register('name');\n`), [REGISTER]],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  const { control } = form;\n  void control.register('name');\n`), [REGISTER]],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  const field = form.register;\n  void field;\n`), [REGISTER]],
+  [formFile, formField('UseFormReturn', 'export function NameField({ form }: { form: UseFormReturn<LeadForm> }) {', '  return <input {...form.register(\'name\')} />;\n'), [REGISTER]],
+  [formFile, formField('UseFormReturn', 'export function NameField(form: UseFormReturn<LeadForm>) {', '  return <input {...form.control.register(\'name\')} />;\n'), [REGISTER]],
+  [formFile, formField('UseFormRegister', 'type Props = { register: UseFormRegister<LeadForm> };\n\nexport function NameField({ register: field }: Props) {', '  return <input {...field(\'name\')} />;\n'), [REGISTER]],
+  [formFile, formField('UseFormReturn as Methods', 'interface Props {\n  form: Methods<LeadForm>;\n}\n\nexport function NameField({ form }: Props) {', '  const { register } = form;\n  return <input {...register(\'name\')} />;\n'), [REGISTER]],
+  [formFile, formField('UseFormReturn', 'export function NameField({ register }: UseFormReturn<LeadForm>) {', '  return <input {...register(\'name\')} />;\n'), [REGISTER]],
+  [formFile, 'import type * as Rhf from \'react-hook-form\';\n\nexport function NameField({ form }: { form: Rhf.UseFormReturn<LeadForm> }) {\n  return <input {...form.register(\'name\')} />;\n}\n', [REGISTER]],
+  [formFile, `${stateImports}  const { isValid } = useFormState({ control });\n  return isValid;\n}\n`, [SUBMIT_GATE]],
+  [formFile, `${stateImports}  const state = useFormState({ control });\n  return state.isValid;\n}\n`, [SUBMIT_GATE]],
+  [formFile, `${stateImports}  return useFormState({ control }).isValid;\n}\n`, [SUBMIT_GATE]],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  const formState = form.formState;\n  void formState.isValid;\n`), [SUBMIT_GATE]],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  const formState = form.formState;\n  const { isValid } = formState;\n  void isValid;\n`), [SUBMIT_GATE]],
+  [formFile, submit('    return mutateAsync(values);\n'), [MUTATE_ASYNC]],
+  [formFile, submit('    return mutateAsync(values).then(reset);\n'), [MUTATE_ASYNC]],
+  [formFile, component(`${mutation}  const onSubmit = (values: LeadForm) => mutateAsync(values);\n  void onSubmit;\n`), [MUTATE_ASYNC]],
+  [formFile, component('  const create = api.leads.create.useMutation();\n  const onSubmit = async (values: LeadForm) => create.mutateAsync(values);\n  void onSubmit;\n'), [MUTATE_ASYNC]],
+  [formFile, submit('    await mutateAsync(values).then(reset);\n'), [MUTATE_ASYNC]],
+  [formFile, submit('    await mutateAsync(values).catch(fail).then(reset);\n'), [MUTATE_ASYNC]],
+  [formFile, submit('    try {\n      notify();\n    } catch {\n      fail();\n    }\n    return mutateAsync(values);\n'), [MUTATE_ASYNC]],
+  [formFile, roles('    await Promise.all(changes.map(async change => updateRole(change)));\n'), [MUTATE_ASYNC]],
+  [formFile, roles('    await Promise.all(changes.map(change => {\n      return updateRole(change);\n    }));\n'), [MUTATE_ASYNC]],
+  [formFile, roles('    try {\n      Promise.all(changes.map(change => updateRole(change)));\n    } catch {\n      fail();\n    }\n'), [MUTATE_ASYNC]],
+  [formFile, roles('    try {\n      await Promise.all(changes.map(async (change) => {\n        await updateRole(change);\n      }));\n    } catch {\n      fail();\n    }\n'), [MUTATE_ASYNC]],
+  [formFile, roles('    try {\n      notify();\n    } catch {\n      fail();\n    }\n    await run(() => updateRole(changes[0]));\n'), [MUTATE_ASYNC]],
 ];
 
 for (const [file, code, messages, options] of rejected) {
@@ -122,6 +162,31 @@ const accepted = [
   [formFile, component('  const { mutateAsync } = useSWRMutation(key);\n  const onSubmit = async () => {\n    await mutateAsync();\n  };\n  void onSubmit;\n')],
   [formFile.replace('.tsx', '.test.tsx'), `${submit('    await mutateAsync(values);\n')}`],
   ['src/app/leads/schemas/LeadForm/lead-form.schema.test.ts', `${zodImport}export const leadFormSchema = z.object({ name: z.string().default('') });\n`],
+  [formFile, useFormWith(`${resolver}, defaultValues: { tags: [lead.tag, 'x'], ids: lead.ids.map(String) }`)],
+  [formFile, component(`  const defaults = { name: lead.name, ...leadFormDefaults };\n  const form = useForm({ ${resolver}, defaultValues: defaults });\n  void form;\n`)],
+  [formFile, component(`  const form = useForm({ ${resolver}, defaultValues: toLeadForm(lead) });\n  void form;\n`)],
+  [formFile, `${imports}const leadDefaults = { name: lead.name };\n\nexport function LeadForm() {\n  return useForm({ ${resolver}, defaultValues: leadDefaults });\n}\n`],
+  [formFile, component('  const resolver = zodResolver(leadFormSchema);\n  const form = useForm({ resolver, defaultValues: leadFormDefaults });\n  void form;\n')],
+  [formFile, component('  const validate = zodResolver(leadFormSchema);\n  const form = useForm({ resolver: validate });\n  void form;\n')],
+  [formFile, component('  const options = { resolver: zodResolver(leadFormSchema), defaultValues: leadFormDefaults } as const;\n  const form = useForm(options);\n  void form;\n')],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  const control = form.control;\n  return <Controller control={control} name="name" render={() => null} />;\n`).replace('  return null;\n', '')],
+  [formFile, 'export function Worker({ worker }: { worker: ServiceWorkerContainer }) {\n  return worker.register(\'/sw.js\');\n}\n'],
+  [formFile, 'import type { UseFormReturn } from \'./forms\';\n\nexport function NameField({ form }: { form: UseFormReturn<LeadForm> }) {\n  return <input {...form.register(\'name\')} />;\n}\n'],
+  [formFile, formField('UseFormReturn', 'export function NameField({ form, register }: { form: UseFormReturn<LeadForm>; register: Registry }) {', '  register.add(form.control);\n  return null;\n')],
+  [formFile, `${stateImports}  const { errors, isSubmitting } = useFormState({ control });\n  return [errors, isSubmitting];\n}\n`],
+  [formFile, `${imports}import { useFormState } from './forms';\n\nexport function LeadForm() {\n  const { control } = useForm({ ${resolver} });\n  const { isValid } = useFormState({ control });\n  return isValid;\n}\n`],
+  [formFile, submit('    await mutateAsync(values).catch(fail);\n')],
+  [formFile, submit('    await mutateAsync(values).then(reset).catch(fail);\n')],
+  [formFile, submit('    try {\n      return await mutateAsync(values);\n    } catch {\n      fail();\n    }\n')],
+  [formFile, submit('    try {\n      return mutateAsync(values).then(reset);\n    } catch {\n      fail();\n    }\n')],
+  [formFile, component('  const { mutate } = api.leads.create.useMutation();\n  const onSubmit = (values: LeadForm) => mutate(values);\n  void onSubmit;\n')],
+  ['src/app/chat/components/AssistantDock/AssistantDock.tsx', 'export function AssistantDock() {\n  const { mutateAsync: ask } = api.ai.ask.useMutation();\n  return () => ask();\n}\n'],
+  [formFile, roles('    try {\n      await Promise.all(changes.map(async change => updateRole(change)));\n    } catch {\n      fail();\n    }\n')],
+  [formFile, roles('    try {\n      await Promise.all(\n        changes.map(async change =>\n          updateRole({ memberId: change.memberId, role: change.role }),\n        ),\n      );\n      notify();\n    } catch (err) {\n      fail(err);\n    }\n')],
+  [formFile, roles('    try {\n      await Promise.allSettled(changes.map(function save(change) {\n        return updateRole(change);\n      }));\n    } catch {\n      fail();\n    }\n')],
+  [formFile, roles('    try {\n      await Promise.race([run(() => updateRole(changes[0])), timeout()]);\n    } catch {\n      fail();\n    }\n')],
+  [formFile, roles('    try {\n      await run(() => updateRole(changes[0]));\n    } catch {\n      fail();\n    }\n')],
+  [formFile, roles('    await Promise.any(changes.map(change => updateRole(change))).catch(fail);\n')],
 ];
 
 for (const [file, code, options] of accepted) {
