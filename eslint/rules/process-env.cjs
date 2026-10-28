@@ -53,8 +53,17 @@ const isImportedProcess = (scope, node) => {
   return definitions.length === 0 ? node.name === 'process' : isProcessImport(definitions[0]);
 };
 
+const isProcessNamespace = (scope, node) => {
+  if (node?.type !== 'Identifier') {
+    return false;
+  }
+  const [definition] = findVariable(scope, node.name)?.defs ?? [];
+  return definition?.type === 'ImportBinding' && isProcessModule(definition.parent) && definition.node.type === 'ImportNamespaceSpecifier';
+};
+
 const isProcessObject = (scope, node) => isImportedProcess(scope, node)
-  || (isMemberNamed(node, 'process') && isGlobalIdentifier(scope, node.object, 'globalThis'));
+  || (isMemberNamed(node, 'process') && isGlobalIdentifier(scope, node.object, 'globalThis'))
+  || (isMemberNamed(node, 'default') && isProcessNamespace(scope, node.object));
 
 const processEnvVisitors = (context, report) => {
   const reportEnvKeys = (pattern) => {

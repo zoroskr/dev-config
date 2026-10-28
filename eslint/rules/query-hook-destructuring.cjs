@@ -11,6 +11,10 @@ const isQueryHookImport = (scope, name) => {
     && QUERY_HOOK.test(exportedName(definition.node.imported));
 };
 
+const TS_WRAPPERS = new Set(['TSAsExpression', 'TSNonNullExpression', 'TSSatisfiesExpression', 'TSTypeAssertion']);
+
+const unwrap = node => (TS_WRAPPERS.has(node?.type) ? unwrap(node.expression) : node);
+
 module.exports = {
   meta: {
     type: 'problem',
@@ -21,7 +25,11 @@ module.exports = {
   },
   create(context) {
     return {
-      'VariableDeclarator[id.type=\'Identifier\'] > CallExpression.init'(node) {
+      'VariableDeclarator[id.type=\'Identifier\']'(declarator) {
+        const node = unwrap(declarator.init);
+        if (node?.type !== 'CallExpression') {
+          return;
+        }
         const { callee } = node;
         const isHook = callee.type === 'MemberExpression'
           ? !callee.computed && QUERY_HOOK.test(callee.property.name)

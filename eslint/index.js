@@ -66,8 +66,17 @@ const inferredReturnTypeSyntax = [{
   message: 'Do not annotate function return types; let TypeScript infer them. See skill `typescript-strict`.',
 }];
 
+const lazyLoaders = [
+  'CallExpression:matches([callee.name=\'dynamic\'], [callee.name=\'lazy\'], [callee.property.name=\'lazy\']) > ArrowFunctionExpression.arguments',
+  'VariableDeclaration[kind=\'const\'] > VariableDeclarator > ArrowFunctionExpression.init',
+];
+const lazyImports = lazyLoaders.flatMap(loader => [
+  `${loader} > ImportExpression.body`,
+  `${loader} > CallExpression.body > MemberExpression.callee[property.name='then'] > ImportExpression.object`,
+]);
+
 const productionSyntax = [{
-  selector: 'ImportExpression:not(ArrowFunctionExpression > ImportExpression.body):not(ArrowFunctionExpression > CallExpression.body > MemberExpression.callee[property.name=\'then\'] > ImportExpression.object)',
+  selector: `ImportExpression${lazyImports.map(selector => `:not(${selector})`).join('')}`,
   message: 'Do not use `import()` outside a lazy loader (`dynamic(() => import(\'./C\'))`, `lazy(() => import(\'./C\'))`); use a static import and mock the boundary module in the test. See skill `code-hygiene`.',
 }];
 
@@ -76,7 +85,14 @@ const nonEmptyLiterals = path => [
   `[${path}.type='ArrayExpression'][${path}.elements.length>0]`,
 ];
 const constAssertion = '[init.type=\'TSAsExpression\'][init.typeAnnotation.typeName.name=\'const\']';
-const fixtureInits = [...nonEmptyLiterals('init'), ...nonEmptyLiterals('init.expression').map(literal => `${constAssertion}${literal}`)];
+const satisfiesInit = '[init.type=\'TSSatisfiesExpression\']';
+const constSatisfiesInit = `${satisfiesInit}[init.expression.type='TSAsExpression'][init.expression.typeAnnotation.typeName.name='const']`;
+const fixtureInits = [
+  ...nonEmptyLiterals('init'),
+  ...nonEmptyLiterals('init.expression').map(literal => `${constAssertion}${literal}`),
+  ...nonEmptyLiterals('init.expression').map(literal => `${satisfiesInit}${literal}`),
+  ...nonEmptyLiterals('init.expression.expression').map(literal => `${constSatisfiesInit}${literal}`),
+];
 
 const testFileSyntax = [{
   selector: `VariableDeclaration[kind='const'] > VariableDeclarator[id.typeAnnotation]:matches(${fixtureInits.join(', ')})`,

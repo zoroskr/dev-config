@@ -37,6 +37,8 @@ for (const code of [
   '/// <reference path=\'./types.d.ts\' />',
   '/// <reference lib="esnext" />',
   '/// <reference no-default-lib="true" />',
+  '/* eslint-disable\n  no-console,\n  no-alert\n*/',
+  '/* eslint-disable-next-line\n  no-console -- intentional output\n*/\nconsole.log(1);',
 ]) {
   test(`accepts ${JSON.stringify(code)}`, () => {
     const messages = new Linter().verify(code, config);
@@ -85,6 +87,7 @@ for (const code of [
   '/* eslint-disable ts/no-unsafe-assignment, ts/no-unsafe-member-access */',
   '/* eslint-disable no-console, ts/no-unsafe-call -- legacy module */',
   '/*eslint-disable no-restricted-syntax*/',
+  '/* eslint-disable\n  no-console,\n  no-restricted-syntax\n*/',
 ]) {
   test(`rejects the block-form disable ${JSON.stringify(code)}`, () => {
     const messages = new Linter().verify(code, config);
@@ -108,6 +111,10 @@ for (const [code, line] of [
   ['const value = 1; // eslint-disable-line local/no-comments\n', 1],
   ['// eslint-disable-next-line\n/* eslint-disable no-restricted-syntax */\n', 1],
   ['/* eslint-disable-next-line local/no-comments */\n// prose\n', 1],
+  ['/* eslint-disable\nlocal/no-comments */\n// prose\n', 1],
+  ['const value = 1;\n/*\n  eslint-disable\n  no-restricted-syntax,\n  local/no-comments\n  -- legacy\n*/\n// prose\n', 2],
+  ['/* eslint-disable\n*/\n// prose\n', 1],
+  ['/*\neslint-disable-next-line\n*/\n// prose\n', 1],
 ]) {
   test(`self-disabling ${JSON.stringify(code)} is reported where no directive reaches`, () => {
     const messages = new Linter().verify(code, inlineConfig);
@@ -128,6 +135,29 @@ for (const code of [
     assert.deepEqual(new Linter().verify(code, inlineConfig).filter(message => message.ruleId === 'local/no-comments'), []);
   });
 }
+
+const INLINE_CONFIG = 'Do not configure rules with inline `/* eslint … */` comments; configure them in the ESLint config. See skill `code-hygiene`.';
+
+for (const code of [
+  '/* eslint no-console: off */\nconsole.log(1);\n',
+  '/* eslint no-restricted-syntax: ["error"] */\n',
+  '/*\n  eslint\n  no-console: off\n*/\nconsole.log(1);\n',
+  '/* eslint local/no-comments: error */\n',
+]) {
+  test(`inline config ${JSON.stringify(code)} is reported`, () => {
+    const messages = new Linter().verify(code, inlineConfig);
+    assert.equal(messages.some(message => message.fatal), false);
+    const reported = messages.filter(message => message.ruleId === 'local/no-comments' && message.severity === 2);
+    assert.equal(reported.length, 1, JSON.stringify(messages));
+    assert.equal(reported[0].message, INLINE_CONFIG);
+    assert.equal(reported[0].line, 1);
+  });
+}
+
+test('an inline config switching the guard off disables it, so a repository check must block it', () => {
+  const messages = new Linter().verify('/* eslint local/no-comments: off */\n// prose\n', inlineConfig);
+  assert.deepEqual(messages.filter(message => message.ruleId === 'local/no-comments'), []);
+});
 
 test('the package config cannot switch the comment guard off from inside a file', async () => {
   const app = join(dirname(dirname(fileURLToPath(import.meta.url))), 'test/fixtures/app');

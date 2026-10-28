@@ -39,6 +39,8 @@ const rejected = [
   ['src/server/a.ts', 'import process from \'process\';\n\nexport const key = process.env.API_KEY;\n', 'local/no-process-env', ENV_MESSAGE],
   ['src/server/a.ts', 'import runtime from \'node:process\';\n\nexport const key = runtime.env[\'API_KEY\'];\n', 'local/no-process-env', ENV_MESSAGE],
   ['src/server/a.ts', 'import * as runtime from \'node:process\';\n\nexport const key = runtime.env.API_KEY;\n', 'local/no-process-env', ENV_MESSAGE],
+  ['src/server/a.ts', 'import * as runtime from \'node:process\';\n\nexport const key = runtime.default.env.API_KEY;\n', 'local/no-process-env', ENV_MESSAGE],
+  ['src/server/a.ts', 'import * as runtime from \'process\';\n\nconst { env } = runtime.default;\n\nexport const key = env.API_KEY;\n', 'local/no-process-env', ENV_MESSAGE],
   ['src/server/a.ts', 'import { default as runtime } from \'process\';\n\nexport const key = runtime.env.API_KEY;\n', 'local/no-process-env', ENV_MESSAGE],
   ['src/server/a.ts', 'import runtime from \'node:process\';\n\nconst { env } = runtime;\n\nexport const key = env.API_KEY;\n', 'local/no-process-env', ENV_MESSAGE],
   ['src/server/a.ts', 'import { env } from \'node:process\';\n\nexport const key = env.API_KEY;\n', 'local/no-process-env', ENV_MESSAGE],
@@ -55,21 +57,31 @@ const rejected = [
   ['src/a.tsx', 'import { useInfiniteQuery } from \'@tanstack/react-query\';\n\nexport function List() {\n  const posts = useInfiniteQuery(options);\n  return posts.data;\n}\n', 'local/query-hook-destructuring', HOOK_MESSAGE, query],
   ['src/a.tsx', 'import { useSuspenseQuery as useData } from \'@tanstack/react-query\';\n\nexport function List() {\n  const posts = useData(options);\n  return posts.data;\n}\n', 'local/query-hook-destructuring', HOOK_MESSAGE, query],
   ['src/a.tsx', 'import { useSuspenseInfiniteQuery } from \'@tanstack/react-query\';\n\nexport function List() {\n  const posts = useSuspenseInfiniteQuery(options);\n  return posts.data;\n}\n', 'local/query-hook-destructuring', HOOK_MESSAGE, query],
+  ['src/a.tsx', 'import { useQuery } from \'@tanstack/react-query\';\n\nexport function List() {\n  const posts = useQuery({ queryKey: [\'posts\'], queryFn: load }) satisfies Posts;\n  return posts.data;\n}\n', 'local/query-hook-destructuring', HOOK_MESSAGE, query],
+  ['src/a.tsx', 'export function List() {\n  const posts = api.post.list.useQuery() satisfies Posts;\n  return posts.data;\n}\n', 'local/query-hook-destructuring', HOOK_MESSAGE, query],
+  ['src/a.tsx', 'export function List() {\n  const posts = api.post.list.useQuery() as const;\n  return posts.data;\n}\n', 'local/query-hook-destructuring', HOOK_MESSAGE, query],
   ['src/a.ts', 'export async function load() {\n  const module = await import(\'./b\');\n  return module.value;\n}\n', 'no-restricted-syntax', IMPORT_MESSAGE],
   ['src/a.ts', 'export async function load() {\n  const { value } = await import(\'./b\');\n  return value;\n}\n', 'no-restricted-syntax', IMPORT_MESSAGE],
   ['src/a.repository.ts', 'export async function load() {\n  return (await import(\'./b\')).value;\n}\n', 'no-restricted-syntax', IMPORT_MESSAGE, { layeredBackend: true }],
   ['src/a.ts', 'export async function load() {\n  const value = await import(\'./b\').then(module => module.default);\n  return value;\n}\n', 'no-restricted-syntax', IMPORT_MESSAGE],
   ['src/a.ts', 'export const pending = import(\'./b\');\n', 'no-restricted-syntax', IMPORT_MESSAGE],
+  ['src/a.ts', 'export function load() {\n  return Promise.resolve().then(() => import(\'./b\'));\n}\n', 'no-restricted-syntax', IMPORT_MESSAGE],
+  ['src/a.ts', 'export const loaded = ready.then(() => import(\'./b\'));\n', 'no-restricted-syntax', IMPORT_MESSAGE],
+  ['src/a.ts', 'export const loaded = ready.then(() => import(\'./b\').then(module => module.default));\n', 'no-restricted-syntax', IMPORT_MESSAGE],
+  ['src/a.ts', 'export let load = () => import(\'./b\');\n\nload = () => import(\'./c\');\n', 'no-restricted-syntax', IMPORT_MESSAGE, undefined, 2],
+  ['src/a.tsx', 'export const Chart = memo(() => import(\'./chart\'));\n', 'no-restricted-syntax', IMPORT_MESSAGE],
   ['src/users.fixtures.ts', 'export async function load() {\n  const module = await import(\'./b\');\n  return module.value;\n}\n', 'no-restricted-syntax', IMPORT_MESSAGE],
 ];
 
-for (const [file, code, ruleId, message, options] of rejected) {
+for (const [file, code, ruleId, message, options, count = 1] of rejected) {
   test(`${file} rejects ${JSON.stringify(code)}${options ? ` with ${JSON.stringify(options)}` : ''}`, async () => {
     const messages = await lint(file, code, options);
-    assert.equal(messages.length, 1, JSON.stringify(messages));
-    assert.equal(messages[0].ruleId, ruleId);
-    assert.equal(messages[0].message, message);
-    assert.match(messages[0].message, SKILL);
+    assert.equal(messages.length, count, JSON.stringify(messages));
+    for (const entry of messages) {
+      assert.equal(entry.ruleId, ruleId);
+      assert.equal(entry.message, message);
+      assert.match(entry.message, SKILL);
+    }
   });
 }
 
@@ -105,6 +117,11 @@ const accepted = [
   ['src/a.tsx', 'export const Chart = dynamic(() => import(\'./chart\'));\n'],
   ['src/a.tsx', 'export const Chart = dynamic(() => import(\'./chart\').then(module => module.Chart));\n'],
   ['src/a.tsx', 'export const Chart = lazy(() => import(\'./chart\'));\n'],
+  ['src/a.tsx', 'export const Chart = React.lazy(() => import(\'./chart\'));\n'],
+  ['src/a.tsx', 'export const Chart = React.lazy(() => import(\'./chart\').then(module => ({ default: module.Chart })));\n'],
+  ['src/a.tsx', 'export function Page() {\n  const load = () => import(\'./chart\');\n  return load;\n}\n'],
+  ['src/a.tsx', 'import { useQuery } from \'@tanstack/react-query\';\n\nexport function List() {\n  const { data } = useQuery({ queryKey: [\'posts\'], queryFn: load }) satisfies Posts;\n  return data;\n}\n', query],
+  ['src/server/a.ts', 'import * as runtime from \'node:process\';\n\nexport const os = runtime.default.platform;\n'],
   ['scripts/seed.ts', 'export async function load() {\n  const module = await import(\'./b\');\n  return module.value;\n}\n'],
   ['src/a.test.ts', 'export async function load() {\n  const module = await import(\'./b\');\n  return module.value;\n}\n'],
 ];
@@ -118,4 +135,11 @@ for (const [file, code, options] of accepted) {
 test('no-process-env also fires in isomorphic shared files', async () => {
   const messages = await lint('src/shared/a/read.ts', 'export const key = process.env.API_KEY;\n', { isomorphic: true });
   assert.deepEqual(messages.map(message => message.ruleId), ['local/no-process-env']);
+});
+
+test('isomorphic-boundary shares the namespace default process read', async () => {
+  const eslint = new ESLint({ cwd: app, overrideConfigFile: true, overrideConfig: await zoroskr({ isomorphic: true }) });
+  const [result] = await eslint.lintText('import * as runtime from \'node:process\';\n\nexport const key = runtime.default.env.API_KEY;\n', { filePath: join(app, 'src/shared/a/read.ts') });
+  const reads = result.messages.filter(message => message.line === 3).map(message => message.ruleId);
+  assert.deepEqual(reads.sort(), ['local/isomorphic-boundary', 'local/no-process-env']);
 });

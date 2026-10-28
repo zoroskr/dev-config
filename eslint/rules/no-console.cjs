@@ -2,6 +2,8 @@ const { isGlobalIdentifier, isKeyNamed, isMemberNamed } = require('./process-env
 
 const destructuredSource = node => (node.parent.type === 'VariableDeclarator' && node.parent.id === node ? node.parent.init : null);
 
+const CONSOLE_MODULES = new Set(['console', 'node:console']);
+
 module.exports = {
   meta: {
     type: 'problem',
@@ -14,6 +16,11 @@ module.exports = {
     const report = node => context.report({ node, messageId: 'console' });
 
     return {
+      ImportDeclaration(node) {
+        if (CONSOLE_MODULES.has(node.source.value)) {
+          context.sourceCode.getDeclaredVariables(node).flatMap(variable => variable.references).forEach(({ identifier }) => report(identifier));
+        }
+      },
       'Program:exit'(program) {
         const scope = context.sourceCode.getScope(program);
         const variable = scope.set.get('console');

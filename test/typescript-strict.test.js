@@ -45,6 +45,10 @@ const rejected = [
   ['data/__fixtures__/nested/users.tsx', `${userType}export const users: User[] = [{ id: '1' }];\n`, /satisfies T/, 1],
   ['user.fixture.ts', `${userType}export const user: User = { id: '1' };\n`, /satisfies T/, 1],
   ['users.fixtures.tsx', `${userType}export const users: User[] = [{ id: '1' }];\n`, /satisfies T/, 1],
+  ['a.test.ts', `${userType}export const user: User = { id: '1' } satisfies User;\n`, /^Use `satisfies T` for fixtures/, 1],
+  ['a.test.ts', `${userType}export const users: User[] = [{ id: '1' }] satisfies User[];\n`, /satisfies T/, 1],
+  ['a.test.ts', `${userType}export const user: User = { id: '1' } as const satisfies User;\n`, /satisfies T/, 1],
+  ['user.fixture.ts', `${userType}export const users: readonly User[] = [{ id: '1' }] as const satisfies readonly User[];\n`, /satisfies T/, 1],
 ];
 
 for (const [file, code, message, count, options] of rejected) {
@@ -78,6 +82,9 @@ const accepted = [
   ['a.test.ts', `${userType}export function build() {\n  let users: User[] = [{ id: '1' }];\n  users = [];\n  return users;\n}\n`],
   ['user.fixture.ts', `${userType}export const user = { id: '1' } satisfies User;\n`],
   ['__fixtures__/user.ts', `${userType}export const users: User[] = [];\n`],
+  ['a.test.ts', `${userType}export const user = { id: '1' } as const satisfies User;\n`],
+  ['a.test.ts', `${userType}export const users: User[] = [] satisfies User[];\n`],
+  ['a.ts', 'import console from \'./logger\';\n\nexport function run() {\n  console.error(\'x\');\n}\n'],
   ['a.ts', 'export function run(console: { log: (value: string) => void }) {\n  console.log(\'x\');\n}\n'],
   ['a.ts', 'export const settings = { console: true };\n'],
   ['a.ts', 'export const read = (logger: { console: string }) => logger.console;\n'],
@@ -98,6 +105,12 @@ const consoleRejected = [
   ['a.ts', 'const { log } = globalThis.console;\n\nexport const write = log;\n'],
   ['a.ts', 'const { console: output } = globalThis;\n\nexport const write = output.log;\n'],
   ['user.fixture.ts', 'export const log = console.log;\n'],
+  ['a.ts', 'import console from \'node:console\';\n\nexport function run() {\n  console.error(\'x\');\n}\n'],
+  ['a.ts', 'import output from \'console\';\n\nexport const log = output.log;\n'],
+  ['a.ts', 'import * as output from \'node:console\';\n\nexport function run() {\n  output.error(\'x\');\n}\n'],
+  ['a.ts', 'import { error } from \'node:console\';\n\nexport function run() {\n  error(\'x\');\n}\n'],
+  ['a.ts', 'import { log as write } from \'console\';\n\nexport const run = (values: string[]) => values.forEach(write);\n'],
+  ['a.ts', 'import { default as output } from \'console\';\n\nexport function run() {\n  output.warn(\'x\');\n}\n'],
 ];
 
 for (const [file, code] of consoleRejected) {
