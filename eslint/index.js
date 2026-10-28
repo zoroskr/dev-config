@@ -4,18 +4,22 @@ import noSecrets from 'eslint-plugin-no-secrets';
 import security from 'eslint-plugin-security';
 import isomorphicBoundary from './rules/isomorphic-boundary.cjs';
 import noComments from './rules/no-comments.cjs';
+import noConsole from './rules/no-console.cjs';
 import noInlineZodInfer from './rules/no-inline-zod-infer.cjs';
 import noProcessEnv from './rules/no-process-env.cjs';
 import noSchemaDefault from './rules/no-schema-default.cjs';
 import noTypesFile from './rules/no-types-file.cjs';
 import noZodMessageParam from './rules/no-zod-message-param.cjs';
+import queryHookDestructuring from './rules/query-hook-destructuring.cjs';
 import requireProcedureOutput from './rules/require-procedure-output.cjs';
 import serviceExportsFunctions from './rules/service-exports-functions.cjs';
 
 const sourceFiles = '**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}';
 const typeScriptFiles = ['**/*.ts', '**/*.tsx'];
 const testFiles = ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/*.stories.{ts,tsx}'];
-const processEnvIgnores = [...testFiles, '**/*.config.*', 'scripts/**'];
+const fixtureFiles = ['**/__fixtures__/**/*.{ts,tsx}', '**/*.fixture.{ts,tsx}', '**/*.fixtures.{ts,tsx}'];
+const productionIgnores = [...testFiles, 'scripts/**'];
+const processEnvIgnores = [...productionIgnores, '**/*.config.*'];
 
 const securityWarnings = Object.fromEntries(
   Object.keys(security.configs.recommended.rules).map(rule => [rule, 'warn']),
@@ -62,24 +66,20 @@ const inferredReturnTypeSyntax = [{
   message: 'Do not annotate function return types; let TypeScript infer them. See skill `typescript-strict`.',
 }];
 
-const queryHookSyntax = [{
-  selector: 'VariableDeclarator[id.type=\'Identifier\'] > CallExpression.init[callee.property.name=/^use(Mutation|Query|InfiniteQuery|SuspenseQuery|SuspenseInfiniteQuery)$/]',
-  message: 'Destructure hook returns at the call site. See skill `code-hygiene`.',
+const productionSyntax = [{
+  selector: 'ImportExpression:not(ArrowFunctionExpression > ImportExpression.body):not(ArrowFunctionExpression > CallExpression.body > MemberExpression.callee[property.name=\'then\'] > ImportExpression.object)',
+  message: 'Do not use `import()` outside a lazy loader (`dynamic(() => import(\'./C\'))`, `lazy(() => import(\'./C\'))`); use a static import and mock the boundary module in the test. See skill `code-hygiene`.',
 }];
 
-const productionSyntax = [
-  {
-    selector: 'CallExpression[callee.object.name=\'console\']',
-    message: 'Do not call `console` in production code; log through the project\'s error reporter. See skill `typescript-strict`.',
-  },
-  {
-    selector: 'AwaitExpression > ImportExpression',
-    message: 'Do not lazy-load with `await import()`; use a static import and mock the boundary module in the test. See skill `code-hygiene`.',
-  },
+const nonEmptyLiterals = path => [
+  `[${path}.type='ObjectExpression'][${path}.properties.length>0]`,
+  `[${path}.type='ArrayExpression'][${path}.elements.length>0]`,
 ];
+const constAssertion = '[init.type=\'TSAsExpression\'][init.typeAnnotation.typeName.name=\'const\']';
+const fixtureInits = [...nonEmptyLiterals('init'), ...nonEmptyLiterals('init.expression').map(literal => `${constAssertion}${literal}`)];
 
 const testFileSyntax = [{
-  selector: 'VariableDeclarator[id.typeAnnotation]:matches([init.type=\'ObjectExpression\'][init.properties.length>0], [init.type=\'ArrayExpression\'][init.elements.length>0])',
+  selector: `VariableDeclaration[kind='const'] > VariableDeclarator[id.typeAnnotation]:matches(${fixtureInits.join(', ')})`,
   message: 'Use `satisfies T` for fixtures. See skill `typescript-strict`.',
 }];
 
@@ -329,7 +329,6 @@ export default async function zoroskr(options = {}, ...userConfigs) {
   const baseRestrictedSyntax = [
     ...restrictedSyntax,
     ...(inferredReturnTypes ? inferredReturnTypeSyntax : []),
-    ...(query ? queryHookSyntax : []),
     ...extraRestrictedSyntax,
   ];
   const productionRestrictedSyntax = [...baseRestrictedSyntax, ...productionSyntax];
@@ -355,11 +354,13 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             ...localRules,
             'isomorphic-boundary': isomorphicBoundary,
             'no-comments': noComments,
+            'no-console': noConsole,
             'no-inline-zod-infer': noInlineZodInfer,
             'no-process-env': noProcessEnv,
             'no-schema-default': noSchemaDefault,
             'no-types-file': noTypesFile,
             'no-zod-message-param': noZodMessageParam,
+            'query-hook-destructuring': queryHookDestructuring,
             'require-procedure-output': requireProcedureOutput,
             'service-exports-functions': serviceExportsFunctions,
           },
@@ -404,15 +405,17 @@ export default async function zoroskr(options = {}, ...userConfigs) {
         'local/no-inline-zod-infer': 'error',
         'local/no-types-file': 'error',
         'local/no-zod-message-param': 'error',
+        ...(query ? { 'local/query-hook-destructuring': 'error' } : {}),
         'no-restricted-syntax': ['error', ...baseRestrictedSyntax],
       },
     },
     {
       name: 'zoroskr/typescript-production',
       files: typeScriptFiles,
-      ignores: testFiles,
+      ignores: productionIgnores,
       rules: {
         'no-console': 'off',
+        'local/no-console': 'error',
         'no-restricted-syntax': ['error', ...productionRestrictedSyntax],
       },
     },
@@ -420,6 +423,12 @@ export default async function zoroskr(options = {}, ...userConfigs) {
       name: 'zoroskr/typescript-tests',
       files: testFiles,
       rules: { 'no-restricted-syntax': ['error', ...baseRestrictedSyntax, ...testFileSyntax] },
+    },
+    {
+      name: 'zoroskr/typescript-fixtures',
+      files: fixtureFiles,
+      ignores: productionIgnores,
+      rules: { 'no-restricted-syntax': ['error', ...productionRestrictedSyntax, ...testFileSyntax] },
     },
     {
       name: 'zoroskr/no-process-env',

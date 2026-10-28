@@ -7,7 +7,7 @@ import zoroskr from '../eslint/index.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = join(root, 'test/fixtures/app');
-const layeredRules = new Set(['no-restricted-syntax', 'no-restricted-imports', 'no-console', 'local/require-procedure-output', 'local/service-exports-functions']);
+const layeredRules = new Set(['no-restricted-syntax', 'no-restricted-imports', 'no-console', 'local/no-console', 'local/require-procedure-output', 'local/service-exports-functions']);
 
 async function lint(file, code, options = { layeredBackend: true }) {
   const eslint = new ESLint({ cwd: app, overrideConfigFile: true, overrideConfig: await zoroskr(options) });
@@ -47,7 +47,7 @@ const rejected = [
   ['a.service.ts', 'const limit = 10;\n\nexport default limit;\n', 'local/service-exports-functions', /exports only functions/],
   ['a.service.ts', 'export function update(patch: { [key: string]: unknown }) {\n  return patch;\n}\n', 'no-restricted-syntax', /canonical schema/],
   ['a.repository.ts', 'type Patch = { [field: string]: unknown };\n\nexport function update(patch: Patch) {\n  return patch;\n}\n', 'no-restricted-syntax', /canonical schema/],
-  ['a.repository.ts', 'export function find() {\n  console.error(\'x\');\n}\n', 'no-restricted-syntax', /`console`.*typescript-strict/],
+  ['a.repository.ts', 'export function find() {\n  console.error(\'x\');\n}\n', 'local/no-console', /`console`.*typescript-strict/],
   ['a.repository.ts', 'import { TRPCError } from \'@trpc/server\';\n\nexport const error = () => new TRPCError({ code: \'NOT_FOUND\' });\n', 'no-restricted-imports', /trpc-layered-backend/],
   ['a.repository.ts', 'import { run } from \'./run.service\';\n\nexport const find = () => run();\n', 'no-restricted-imports', /trpc-layered-backend/],
   ['a.repository.ts', 'import { run } from \'../services/run\';\n\nexport const find = () => run();\n', 'no-restricted-imports', /trpc-layered-backend/],

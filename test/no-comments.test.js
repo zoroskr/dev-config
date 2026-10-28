@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { Linter } from 'eslint';
+import { fileURLToPath } from 'node:url';
+import { ESLint, Linter } from 'eslint';
+import zoroskr from '../eslint/index.js';
 import rule from '../eslint/rules/no-comments.cjs';
 
 const config = {
@@ -20,7 +23,6 @@ for (const code of [
   'console.log(1); // eslint-disable-line no-console -- intentional output',
   '/* eslint-disable no-console, @typescript-eslint/no-explicit-any */',
   '/* eslint-enable no-console */',
-  '/* eslint-disable */',
   '// @ts-expect-error: intentional invalid input\nconst value = 1;',
   '// @ts-expect-error intentional invalid input\nconst value = 1;',
   '// @ts-ignore\nconst value = 1;',
@@ -92,3 +94,47 @@ for (const code of [
     assert.equal(reported[0].message, 'Do not disable `no-restricted-syntax`, `ts/no-explicit-any` or `ts/no-unsafe-*` for a whole block or file; use a line-scoped `eslint-disable-next-line` with a reason, or fix the code. See skill `typescript-strict`.');
   });
 }
+
+const inlineConfig = { ...config, linterOptions: { reportUnusedDisableDirectives: 'off' } };
+const SELF_DISABLE = /^Do not disable `local\/no-comments` or every rule with a bare `eslint-disable` directive \(line \d+\); name the rules to disable\. See skill `code-hygiene`\.$/;
+
+for (const [code, line] of [
+  ['/* eslint-disable local/no-comments */\n// prose\n', 1],
+  ['/* eslint-disable local/no-comments, no-restricted-syntax */\nconst value = 1;\n', 1],
+  ['const value = 1;\n/* eslint-disable no-restricted-syntax, local/no-comments -- legacy */\n', 2],
+  ['/* eslint-disable */\n// prose\n', 1],
+  ['/* eslint-disable -- legacy module */\n// prose\n', 1],
+  ['// eslint-disable-next-line local/no-comments\n/* eslint-disable no-restricted-syntax */\n', 1],
+  ['const value = 1; // eslint-disable-line local/no-comments\n', 1],
+  ['// eslint-disable-next-line\n/* eslint-disable no-restricted-syntax */\n', 1],
+  ['/* eslint-disable-next-line local/no-comments */\n// prose\n', 1],
+]) {
+  test(`self-disabling ${JSON.stringify(code)} is reported where no directive reaches`, () => {
+    const messages = new Linter().verify(code, inlineConfig);
+    assert.equal(messages.some(message => message.fatal), false);
+    const reported = messages.filter(message => message.ruleId === 'local/no-comments' && message.severity === 2);
+    assert.equal(reported.length, 1, JSON.stringify(messages));
+    assert.match(reported[0].message, SELF_DISABLE);
+    assert.ok(reported[0].message.includes(`(line ${line})`));
+    assert.equal(reported[0].line, 0);
+  });
+}
+
+for (const code of [
+  '// eslint-disable-next-line no-console\nconsole.log(1);\n',
+  '/* eslint-disable no-console */\nconsole.log(1);\n',
+]) {
+  test(`named directives keep working with inline config ${JSON.stringify(code)}`, () => {
+    assert.deepEqual(new Linter().verify(code, inlineConfig).filter(message => message.ruleId === 'local/no-comments'), []);
+  });
+}
+
+test('the package config cannot switch the comment guard off from inside a file', async () => {
+  const app = join(dirname(dirname(fileURLToPath(import.meta.url))), 'test/fixtures/app');
+  const eslint = new ESLint({ cwd: app, overrideConfigFile: true, overrideConfig: await zoroskr() });
+  const code = '/* eslint-disable local/no-comments, no-restricted-syntax */\n// prose\nexport const total = JSON.parse(\'1\') as number;\n';
+  const [result] = await eslint.lintText(code, { filePath: join(app, 'src/a.ts') });
+  const reported = result.messages.filter(message => message.ruleId === 'local/no-comments');
+  assert.equal(reported.length, 1, JSON.stringify(result.messages));
+  assert.match(reported[0].message, SELF_DISABLE);
+});

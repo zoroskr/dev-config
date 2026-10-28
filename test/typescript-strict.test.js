@@ -7,7 +7,8 @@ import zoroskr from '../eslint/index.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = join(root, 'test/fixtures/app');
-const strictRules = new Set(['no-restricted-syntax', 'no-console', 'ts/no-explicit-any', 'ts/no-non-null-assertion']);
+const strictRules = new Set(['no-restricted-syntax', 'no-console', 'local/no-console', 'ts/no-explicit-any', 'ts/no-non-null-assertion']);
+const CONSOLE_MESSAGE = 'Do not use `console` in production code; log through the project\'s error reporter. See skill `typescript-strict`.';
 const SKILL = /See skill `typescript-strict`\.$/;
 const userType = 'type User = { id: string };\n\n';
 
@@ -30,10 +31,6 @@ const rejected = [
   ['a.ts', 'export const one = (): number => 1;\n', /return types/, 1],
   ['a.ts', 'export const one = function (): number {\n  return 1;\n};\n', /return types/, 1],
   ['a.ts', 'export function one(): number {\n  return 1;\n}\n', /return types/, 1, { inferredReturnTypes: true }],
-  ['a.ts', 'export function run() {\n  console.log(\'x\');\n}\n', /^Do not call `console` in production code/, 1],
-  ['a.ts', 'export function run() {\n  console.warn(\'x\');\n}\n', /`console`/, 1],
-  ['a.ts', 'export function run() {\n  console.error(\'x\');\n}\n', /`console`/, 1],
-  ['a.tsx', 'export function run() {\n  console.info(\'x\');\n}\n', /`console`/, 1],
   ['a.ts', 'export function identity(value: any) {\n  return value;\n}\n', /^Do not use `any`/, 1],
   ['a.test.ts', 'export function identity(value: any) {\n  return value;\n}\n', /`any`/, 1],
   ['a.ts', 'export function first(values: Map<string, number>) {\n  return values.get(\'a\')!;\n}\n', /non-null assertions/, 1],
@@ -42,6 +39,12 @@ const rejected = [
   ['a.test.ts', `${userType}export const users: User[] = [{ id: '1' }];\n`, /satisfies T/, 1],
   ['a.spec.tsx', `${userType}export const user: User = { id: '1' };\n`, /satisfies T/, 1],
   ['a.test.ts', 'export const total = JSON.parse(\'1\') as number;\n', /type assertions/, 1],
+  ['a.test.ts', `${userType}export const user: User = { id: '1' } as const;\n`, /^Use `satisfies T` for fixtures/, 1],
+  ['a.test.ts', `${userType}export const users: readonly User[] = [{ id: '1' }] as const;\n`, /satisfies T/, 1],
+  ['__fixtures__/user.ts', `${userType}export const user: User = { id: '1' };\n`, /satisfies T/, 1],
+  ['data/__fixtures__/nested/users.tsx', `${userType}export const users: User[] = [{ id: '1' }];\n`, /satisfies T/, 1],
+  ['user.fixture.ts', `${userType}export const user: User = { id: '1' };\n`, /satisfies T/, 1],
+  ['users.fixtures.tsx', `${userType}export const users: User[] = [{ id: '1' }];\n`, /satisfies T/, 1],
 ];
 
 for (const [file, code, message, count, options] of rejected) {
@@ -71,7 +74,40 @@ const accepted = [
   ['a.test.ts', `${userType}export const user = { id: '1' } satisfies User;\n`],
   ['a.test.ts', `${userType}export function build(user: User) {\n  const next: User = user;\n  return next;\n}\n`],
   ['a.ts', `${userType}export const user: User = { id: '1' };\n`],
+  ['a.test.ts', `${userType}export function build() {\n  let user: User | null = { id: '1' };\n  user = null;\n  return user;\n}\n`],
+  ['a.test.ts', `${userType}export function build() {\n  let users: User[] = [{ id: '1' }];\n  users = [];\n  return users;\n}\n`],
+  ['user.fixture.ts', `${userType}export const user = { id: '1' } satisfies User;\n`],
+  ['__fixtures__/user.ts', `${userType}export const users: User[] = [];\n`],
+  ['a.ts', 'export function run(console: { log: (value: string) => void }) {\n  console.log(\'x\');\n}\n'],
+  ['a.ts', 'export const settings = { console: true };\n'],
+  ['a.ts', 'export const read = (logger: { console: string }) => logger.console;\n'],
+  ['../scripts/seed.ts', 'export function run() {\n  console.error(\'x\');\n}\n'],
 ];
+
+const consoleRejected = [
+  ['a.ts', 'export function run() {\n  console.log(\'x\');\n}\n'],
+  ['a.ts', 'export function run() {\n  console.warn(\'x\');\n}\n'],
+  ['a.ts', 'export function run() {\n  console.error(\'x\');\n}\n'],
+  ['a.tsx', 'export function run() {\n  console.info(\'x\');\n}\n'],
+  ['a.ts', 'export const log = console.log;\n'],
+  ['a.ts', 'export const run = (values: string[]) => values.forEach(console.log);\n'],
+  ['a.ts', 'export const output = console;\n'],
+  ['a.ts', 'export function run() {\n  globalThis.console.error(\'x\');\n}\n'],
+  ['a.ts', 'export const log = globalThis[\'console\'].log;\n'],
+  ['a.ts', 'const { log } = console;\n\nexport const write = log;\n'],
+  ['a.ts', 'const { log } = globalThis.console;\n\nexport const write = log;\n'],
+  ['a.ts', 'const { console: output } = globalThis;\n\nexport const write = output.log;\n'],
+  ['user.fixture.ts', 'export const log = console.log;\n'],
+];
+
+for (const [file, code] of consoleRejected) {
+  test(`${file} rejects the console reference ${JSON.stringify(code)}`, async () => {
+    const messages = await lint(file, code);
+    assert.equal(messages.length, 1, JSON.stringify(messages));
+    assert.equal(messages[0].ruleId, 'local/no-console');
+    assert.equal(messages[0].message, CONSOLE_MESSAGE);
+  });
+}
 
 for (const [file, code, options] of accepted) {
   test(`${file} accepts ${JSON.stringify(code)}${options ? ` with ${JSON.stringify(options)}` : ''}`, async () => {
@@ -82,6 +118,10 @@ for (const [file, code, options] of accepted) {
 test('console.log in test files keeps the antfu no-console rule', async () => {
   const messages = await lint('a.test.ts', 'export function run() {\n  console.log(\'x\');\n}\n');
   assert.deepEqual(messages.map(message => message.ruleId), ['no-console']);
+});
+
+test('console.log passes in scripts, where antfu turns no-console off', async () => {
+  assert.deepEqual(await lint('../scripts/seed.ts', 'export function run() {\n  console.log(\'x\');\n}\n'), []);
 });
 
 test('console.log in JavaScript files keeps the antfu no-console rule', async () => {
@@ -102,7 +142,7 @@ test('base selectors still fire inside layer and test files', async () => {
   for (const file of ['a.service.ts', 'a.repository.ts', 'a.router.ts', 'a.schema.ts']) {
     const messages = (await lint(file, code, { layeredBackend: true })).map(message => message.message);
     assert.ok(messages.some(message => message.startsWith('Do not use `any`')), file);
-    assert.ok(messages.some(message => message.startsWith('Do not call `console`')), file);
+    assert.ok(messages.includes(CONSOLE_MESSAGE), file);
     assert.ok(messages.some(message => message.includes('non-null')), file);
   }
   const testMessages = (await lint('a.test.ts', code, { layeredBackend: true })).map(message => message.message);

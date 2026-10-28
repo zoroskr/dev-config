@@ -16,21 +16,44 @@ const destructuredSource = (node) => {
   return node.parent.type === 'AssignmentExpression' && node.parent.left === node ? node.parent.right : null;
 };
 
-const isGlobalBinding = (scope, name) => {
+const PROCESS_MODULES = new Set(['process', 'node:process']);
+
+const findVariable = (scope, name) => {
   for (let current = scope; current !== null; current = current.upper) {
     const variable = current.set.get(name);
     if (variable !== undefined) {
-      return variable.defs.length === 0;
+      return variable;
     }
   }
-  return true;
+  return null;
 };
+
+const isGlobalBinding = (scope, name) => (findVariable(scope, name)?.defs.length ?? 0) === 0;
 
 const isGlobalIdentifier = (scope, node, name) => node?.type === 'Identifier'
   && node.name === name
   && isGlobalBinding(scope, name);
 
-const isProcessObject = (scope, node) => isGlobalIdentifier(scope, node, 'process')
+const exportedName = node => (node.type === 'Identifier' ? node.name : node.value);
+
+const isProcessModule = declaration => declaration.source !== null && PROCESS_MODULES.has(declaration.source.value);
+
+const isProcessImport = (definition) => {
+  if (definition?.type !== 'ImportBinding' || !isProcessModule(definition.parent)) {
+    return false;
+  }
+  return definition.node.type !== 'ImportSpecifier' || exportedName(definition.node.imported) === 'default';
+};
+
+const isImportedProcess = (scope, node) => {
+  if (node?.type !== 'Identifier') {
+    return false;
+  }
+  const definitions = findVariable(scope, node.name)?.defs ?? [];
+  return definitions.length === 0 ? node.name === 'process' : isProcessImport(definitions[0]);
+};
+
+const isProcessObject = (scope, node) => isImportedProcess(scope, node)
   || (isMemberNamed(node, 'process') && isGlobalIdentifier(scope, node.object, 'globalThis'));
 
 const processEnvVisitors = (context, report) => {
@@ -58,6 +81,16 @@ const processEnvVisitors = (context, report) => {
   };
 
   return {
+    ImportSpecifier(node) {
+      if (isProcessModule(node.parent) && exportedName(node.imported) === 'env') {
+        context.sourceCode.getDeclaredVariables(node).flatMap(variable => variable.references).forEach(({ identifier }) => report(identifier));
+      }
+    },
+    ExportSpecifier(node) {
+      if (isProcessModule(node.parent) && exportedName(node.local) === 'env') {
+        report(node);
+      }
+    },
     MemberExpression(node) {
       if (isMemberNamed(node, 'env') && isProcessObject(context.sourceCode.getScope(node), node.object)) {
         report(node);
@@ -75,4 +108,4 @@ const processEnvVisitors = (context, report) => {
   };
 };
 
-module.exports = { processEnvVisitors };
+module.exports = { exportedName, findVariable, isGlobalIdentifier, isKeyNamed, isMemberNamed, processEnvVisitors };
