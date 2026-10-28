@@ -17,6 +17,7 @@ const TEST_RULES = new Set([
   'local/no-console',
   'local/no-http-mock',
   'local/no-production-mock',
+  'local/no-call-argument-assertion',
 ]);
 const COLOCATION_RULES = new Set(['local/test-colocation']);
 const SKILL = 'See skill `vitest-testing`.';
@@ -84,6 +85,11 @@ const rejected = [
   ['F1', unitTest, 'type User = { id: string };\nexport const user: User = { id: \'1\' };\n', [FIXTURE]],
   ['F1', unitTest, 'export const forbiddenName = 1;\nconsole.log(1);\n', [CONSOLE, EXTRA], { options: { restrictedSyntax: extraSyntax } }],
   ['F1', 'src/orders/order.ts', 'console.log(\'x\');\n', [PRODUCTION_CONSOLE]],
+  ['F1', unitTest, 'const { log } = console;\nlog(\'x\');\n', [CONSOLE]],
+  ['F1', unitTest, 'const { error: report } = globalThis.console;\nreport(\'x\');\n', [CONSOLE]],
+  ['F1', unitTest, 'const out = console;\nout.info(\'x\');\n', [CONSOLE]],
+  ['F1', unitTest, 'import { log } from \'node:console\';\n\nlog(\'x\');\n', [CONSOLE]],
+  ['F1', unitTest, 'import { Console } from \'console\';\n\nexport const logger = new Console(process.stdout);\n', [CONSOLE]],
   ['F2', unitTest, `${vitest}describe('orders', () => {\n  vi.mock('./order');\n});\n`, [HOISTED]],
   ['F2', unitTest, `${vitest}it('mocks', () => {\n  vi.mock('./order');\n});\n`, [HOISTED]],
   ['F2', 'src/orders/order.ts', 'vi.mock(\'./db\');\n', [PRODUCTION_MOCK]],
@@ -93,6 +99,8 @@ const rejected = [
   ['F2', 'src/orders/order.tsx', 'import { vi as mocker } from \'vitest\';\n\nmocker.mock(\'./db\');\n', [PRODUCTION_MOCK]],
   ['F2', 'src/orders/order.ts', 'import { vi } from \'vitest\';\n\nexport function mockDb() {\n  vi.doMock(\'./db\');\n}\n', [PRODUCTION_MOCK]],
   ['F2', 'src/orders/__fixtures__/order.ts', 'vi.mock(\'./db\');\n', [PRODUCTION_MOCK]],
+  ['F2', 'src/orders/order.ts', 'import * as v from \'vitest\';\n\nv.vi.doMock(\'./db\');\n', [PRODUCTION_MOCK]],
+  ['F2', 'src/orders/order.ts', 'import * as v from \'vitest\';\n\nv.vi.mock(\'./db\');\nv.vitest.mock(\'./auth\');\n', [PRODUCTION_MOCK, PRODUCTION_MOCK]],
   ['F2', 'src/testing/other-setup.ts', 'vi.mock(\'./db\');\n', [PRODUCTION_MOCK], { options: setupFiles }],
   ['F3', unitTest, 'import { http } from \'msw\';\n\nexport const handler = http;\n', [httpMock('msw')]],
   ['F3', unitTest, 'import { setupServer } from \'msw/node\';\n\nexport const server = setupServer();\n', [httpMock('msw/node')]],
@@ -105,11 +113,19 @@ const rejected = [
   ['F3', unitTest, 'import { http } from \'msw\';\nimport { db } from \'@backend/db\';\n\nexport const handler = [http, db];\n', [BACKEND_IMPORT, httpMock('msw')], { userConfigs: [backendBan] }],
   ['F3', 'src/orders/order.repository.ts', 'import { TRPCError } from \'@trpc/server\';\n\nexport const error = TRPCError;\n', [REPOSITORY], { options: { layeredBackend: true } }],
   ['F4', integrationTest, expectCall('expect(vi.fn()).toHaveBeenCalledWith(1);'), [callArgs('toHaveBeenCalledWith')]],
-  ['F4', integrationTest, expectCall('expect(vi.fn()).not.toHaveBeenCalledWith(1);'), [callArgs('not.toHaveBeenCalledWith')]],
+  ['F4', integrationTest, expectCall('expect(vi.fn()).not.toHaveBeenCalledWith(1);'), [callArgs('toHaveBeenCalledWith')]],
   ['F4', integrationTest, expectCall('expect(vi.fn()).toHaveBeenNthCalledWith(1, 2);'), [callArgs('toHaveBeenNthCalledWith')]],
-  ['F4', integrationTest, expectCall('expect(vi.fn()).not.toHaveBeenNthCalledWith(1, 2);'), [callArgs('not.toHaveBeenNthCalledWith')]],
+  ['F4', integrationTest, expectCall('expect(vi.fn()).not.toHaveBeenNthCalledWith(1, 2);'), [callArgs('toHaveBeenNthCalledWith')]],
   ['F4', integrationTest, expectCall('expect(vi.fn()).toHaveBeenLastCalledWith(1);'), [callArgs('toHaveBeenLastCalledWith')]],
-  ['F4', integrationTest, expectCall('expect(vi.fn()).not.toHaveBeenLastCalledWith(1);'), [callArgs('not.toHaveBeenLastCalledWith')]],
+  ['F4', integrationTest, expectCall('expect(vi.fn()).not.toHaveBeenLastCalledWith(1);'), [callArgs('toHaveBeenLastCalledWith')]],
+  ['F4', integrationTest, expectCall('expect(vi.fn()).toBeCalledWith(1);'), [callArgs('toBeCalledWith')]],
+  ['F4', integrationTest, expectCall('expect(vi.fn()).lastCalledWith(1);'), [callArgs('lastCalledWith')]],
+  ['F4', integrationTest, expectCall('expect(vi.fn()).nthCalledWith(1, 2);'), [callArgs('nthCalledWith')]],
+  ['F4', integrationTest, expectCall('expect(vi.fn()).toHaveBeenCalledExactlyOnceWith(1);'), [callArgs('toHaveBeenCalledExactlyOnceWith')]],
+  ['F4', integrationTest, expectCall('expect(Promise.resolve(vi.fn())).resolves.toHaveBeenCalledWith(1);'), [callArgs('toHaveBeenCalledWith')]],
+  ['F4', integrationTest, expectCall('expect(vi.fn()).not[\'toHaveBeenCalledWith\'](1);'), [callArgs('toHaveBeenCalledWith')]],
+  ['F4', integrationTest, expectCall('const fn = vi.fn();\n  expect(fn.mock.calls[0]).toEqual([1]);'), [callArgs('mock.calls')]],
+  ['F4', integrationTest, expectCall('const fn = vi.fn();\n  expect(fn.mock.lastCall).toEqual([1]);'), [callArgs('mock.lastCall')]],
   ['F4', 'src/orders/Order.integration.test.tsx', expectCall('expect(vi.fn()).toHaveBeenCalledWith(1);'), [callArgs('toHaveBeenCalledWith')]],
 ];
 
@@ -123,11 +139,14 @@ const accepted = [
   ['F2', 'src/orders/order.ts', 'const vi = { mock: (path: string) => path };\n\nexport const mocked = vi.mock(\'./db\');\n'],
   ['F2', 'src/orders/order.ts', 'import { mock } from \'./mock\';\n\nexport const mocked = mock(\'./db\');\n'],
   ['F2', 'scripts/seed.ts', 'vi.mock(\'./db\');\n'],
+  ['F2', 'src/orders/order.ts', 'const tools = { vi: { mock: (path: string) => path } };\n\nexport const mocked = tools.vi.mock(\'./db\');\n'],
   ['F3', 'e2e/orders.spec.ts', 'import { http } from \'msw\';\n\nexport const handler = http;\n'],
   ['F3', 'src/orders/Order.stories.tsx', 'import { http } from \'msw\';\n\nexport const handler = http;\n'],
   ['F3', unitTest, 'import { msw } from \'mswjs-helpers\';\nimport nockLike from \'nock-utils\';\n\nexport const tools = [msw, nockLike];\n'],
   ['F4', integrationTest, expectCall('const fn = vi.fn();\n  expect(fn).toHaveBeenCalled();\n  expect(fn).toHaveBeenCalledTimes(1);\n  expect(fn).not.toHaveBeenCalled();')],
   ['F4', unitTest, expectCall('expect(vi.fn()).toHaveBeenCalledWith(1);')],
+  ['F4', unitTest, expectCall('const fn = vi.fn();\n  expect(fn.mock.calls).toHaveLength(0);')],
+  ['F4', integrationTest, expectCall('const fn = vi.fn();\n  expect(fn.mock.results).toHaveLength(0);')],
 ];
 
 for (const [row, file, code, expected, settings] of rejected) {

@@ -5,6 +5,7 @@ import security from 'eslint-plugin-security';
 import appFilePlacement from './rules/app-file-placement.cjs';
 import appRouterSyntax from './rules/app-router-syntax.cjs';
 import isomorphicBoundary from './rules/isomorphic-boundary.cjs';
+import noCallArgumentAssertion from './rules/no-call-argument-assertion.cjs';
 import noComments from './rules/no-comments.cjs';
 import noConsole from './rules/no-console.cjs';
 import noHttpMock from './rules/no-http-mock.cjs';
@@ -136,14 +137,13 @@ const testFileSyntax = [{
 const testConsoleSyntax = [
   'CallExpression[callee.object.name=\'console\']',
   'CallExpression[callee.object.type=\'MemberExpression\'][callee.object.object.name=\'globalThis\'][callee.object.property.name=\'console\']',
+  'VariableDeclarator[init.name=\'console\']',
+  'VariableDeclarator[init.type=\'MemberExpression\'][init.object.name=\'globalThis\'][init.property.name=\'console\']',
+  'ImportDeclaration[source.value=/^(node:)?console$/]',
 ].map(selector => ({
   selector,
   message: 'Do not call `console` in tests; assert on behavior, or spy with `vi.spyOn(console, …)` when the log is the behavior. See skill `vitest-testing`.',
 }));
-
-const callArgumentMatchers = ['toHaveBeenCalledWith', 'toHaveBeenNthCalledWith', 'toHaveBeenLastCalledWith']
-  .flatMap(matcher => [matcher, `not.${matcher}`])
-  .map(chain => [chain, `Integration tests assert real stored reads, never mock call arguments (\`${chain}\`); read the persisted state instead. See skill \`vitest-testing\`.`]);
 
 const zodConstruction = {
   selector: 'CallExpression[callee.object.name=\'z\']',
@@ -536,6 +536,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'app-file-placement': appFilePlacement,
             'app-router-syntax': appRouterSyntax,
             'isomorphic-boundary': isomorphicBoundary,
+            'no-call-argument-assertion': noCallArgumentAssertion,
             'no-comments': noComments,
             'no-console': noConsole,
             'no-http-mock': noHttpMock,
@@ -631,7 +632,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     {
       name: 'zoroskr/vitest/integration-tests',
       files: integrationTestFiles,
-      rules: { 'test/no-restricted-matchers': ['error', Object.fromEntries(callArgumentMatchers)] },
+      rules: { 'local/no-call-argument-assertion': 'error' },
     },
     {
       name: 'zoroskr/vitest/production-mocks',

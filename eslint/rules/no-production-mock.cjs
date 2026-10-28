@@ -3,7 +3,17 @@ const { exportedName, findVariable, isMemberNamed } = require('./process-env.cjs
 const VITEST_NAMES = new Set(['vi', 'vitest']);
 const MOCK_METHODS = ['mock', 'doMock'];
 
+const isVitestNamespace = (scope, node) => {
+  const [definition] = node?.type === 'Identifier' ? findVariable(scope, node.name)?.defs ?? [] : [];
+  return definition?.type === 'ImportBinding'
+    && definition.parent.source.value === 'vitest'
+    && definition.node.type !== 'ImportSpecifier';
+};
+
 const isVitestObject = (scope, node) => {
+  if (node?.type === 'MemberExpression') {
+    return [...VITEST_NAMES].some(name => isMemberNamed(node, name)) && isVitestNamespace(scope, node.object);
+  }
   if (node?.type !== 'Identifier') {
     return false;
   }
