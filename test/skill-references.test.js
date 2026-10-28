@@ -52,7 +52,7 @@ async function customMessages(options) {
   return messages;
 }
 
-const messages = await customMessages({ typescript: true, layeredBackend: true });
+const messages = await customMessages({ typescript: true, layeredBackend: true, isomorphic: true });
 
 test('every package lint message points agents to an existing global skill', () => {
   assert.ok(messages.size > 0);

@@ -2,7 +2,11 @@ import antfu from '@antfu/eslint-config';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import noSecrets from 'eslint-plugin-no-secrets';
 import security from 'eslint-plugin-security';
+import isomorphicBoundary from './rules/isomorphic-boundary.cjs';
 import noComments from './rules/no-comments.cjs';
+import noInlineZodInfer from './rules/no-inline-zod-infer.cjs';
+import noSchemaDefault from './rules/no-schema-default.cjs';
+import noTypesFile from './rules/no-types-file.cjs';
 import requireProcedureOutput from './rules/require-procedure-output.cjs';
 import serviceExportsFunctions from './rules/service-exports-functions.cjs';
 
@@ -31,6 +35,14 @@ const restrictedSyntax = [
     selector: 'ExpressionStatement[directive=\'server-only\']',
     message: 'Use `import \'server-only\';` — a bare \'server-only\' string is a no-op directive. See skill `trpc-layered-backend`.',
   },
+  {
+    selector: 'TSTypeReference[typeName.name=/^inferRouter(Outputs|Inputs)$/]',
+    message: 'Import the output/input type exported beside its schema instead of `inferRouterOutputs`/`inferRouterInputs`. See skill `zod-schemas`.',
+  },
+  {
+    selector: 'TSEnumDeclaration',
+    message: 'Use an `as const` array or `z.enum`, not a TS enum; derive the type with `(typeof VALUES)[number]`. See skill `zod-schemas`.',
+  },
 ];
 
 const zodConstruction = {
@@ -48,6 +60,14 @@ const recordPatches = [
 ].map(selector => ({
   selector,
   message: 'Type patches from the canonical schema, never `Record<string, unknown>`. See skill `trpc-layered-backend`.',
+}));
+
+const schemaRecords = [
+  unknownRecord,
+  unknownIndexSignature,
+].map(selector => ({
+  selector,
+  message: 'Do not erase known shapes with `Record<string, unknown>` or an unknown index signature; model the fields in the schema. See skill `zod-schemas`.',
 }));
 
 const serviceExportsOnlyFunctions = [
@@ -109,7 +129,7 @@ const layeredBackendLayers = [
     selectors: [{
       selector: 'Property[key.name=\'success\'] > CallExpression[callee.property.name=\'literal\']',
       message: 'Mutation outputs are `z.void()` unless the caller needs data, never `{ success: literal }`. See skill `trpc-layered-backend`.',
-    }],
+    }, ...schemaRecords],
     rules: {},
   },
 ];
@@ -124,6 +144,34 @@ function layeredBackendConfigs(layeredBackend, baseRestrictedSyntax) {
     files: [globs.get(layer) ?? files].flat(),
     rules: { ...rules, 'no-restricted-syntax': ['error', ...baseRestrictedSyntax, ...selectors] },
   }));
+}
+
+const isomorphicDefaults = {
+  files: ['**/shared/**/*.{ts,tsx}'],
+  schemaFiles: ['**/shared/**/*.schema.ts', '**/shared/**/schemas/**/*.ts'],
+  ignores: ['**/*.test.{ts,tsx}'],
+  forbiddenImports: [],
+};
+
+function isomorphicConfigs(isomorphic) {
+  if (!isomorphic) {
+    return [];
+  }
+  const { files, schemaFiles, ignores, forbiddenImports } = { ...isomorphicDefaults, ...(typeof isomorphic === 'object' ? isomorphic : {}) };
+  return [
+    {
+      name: 'zoroskr/isomorphic/boundary',
+      files,
+      ignores,
+      rules: { 'local/isomorphic-boundary': ['error', { forbiddenImports }] },
+    },
+    {
+      name: 'zoroskr/isomorphic/schemas',
+      files: schemaFiles,
+      ignores,
+      rules: { 'local/no-schema-default': 'error' },
+    },
+  ];
 }
 
 const typeScriptRules = {
@@ -153,6 +201,7 @@ const typeScriptRules = {
 };
 
 const typeAwareRules = {
+  'ts/no-deprecated': 'error',
   'ts/no-unnecessary-condition': 'error',
   'ts/no-unnecessary-boolean-literal-compare': 'error',
   'ts/prefer-nullish-coalescing': 'error',
@@ -233,6 +282,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     localRules = {},
     restrictedSyntax: extraRestrictedSyntax = [],
     layeredBackend = false,
+    isomorphic = false,
     typescript = {},
     ...antfuOptions
   } = options;
@@ -253,7 +303,20 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     {
       name: 'zoroskr/base',
       files: [sourceFiles],
-      plugins: { local: { rules: { ...localRules, 'no-comments': noComments, 'require-procedure-output': requireProcedureOutput, 'service-exports-functions': serviceExportsFunctions } } },
+      plugins: {
+        local: {
+          rules: {
+            ...localRules,
+            'isomorphic-boundary': isomorphicBoundary,
+            'no-comments': noComments,
+            'no-inline-zod-infer': noInlineZodInfer,
+            'no-schema-default': noSchemaDefault,
+            'no-types-file': noTypesFile,
+            'require-procedure-output': requireProcedureOutput,
+            'service-exports-functions': serviceExportsFunctions,
+          },
+        },
+      },
       rules: {
         ...securityWarnings,
         'local/no-comments': 'error',
@@ -287,9 +350,15 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     {
       name: 'zoroskr/typescript',
       files: typeScriptFiles,
-      rules: { ...typeScriptRules, 'no-restricted-syntax': ['error', ...restrictedSyntax, ...extraRestrictedSyntax] },
+      rules: {
+        ...typeScriptRules,
+        'local/no-inline-zod-infer': 'error',
+        'local/no-types-file': 'error',
+        'no-restricted-syntax': ['error', ...restrictedSyntax, ...extraRestrictedSyntax],
+      },
     },
     ...layeredBackendConfigs(layeredBackend, [...restrictedSyntax, ...extraRestrictedSyntax]),
+    ...isomorphicConfigs(isomorphic),
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),
     ...userConfigs,

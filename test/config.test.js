@@ -65,6 +65,13 @@ test('type-aware rules are skipped without tsconfigPath', async () => {
   assert.equal(errorRules(result.messages).includes('ts/strict-boolean-expressions'), false);
 });
 
+test('ts/no-deprecated is enabled only with type-aware linting', async () => {
+  assert.equal((await rulesFor('clean.ts'))['ts/no-deprecated'][0], 2);
+  const eslint = new ESLint({ cwd: app, overrideConfigFile: true, overrideConfig: await zoroskr() });
+  const config = await eslint.calculateConfigForFile(join(app, 'src/clean.ts'));
+  assert.equal(config.rules['ts/no-deprecated'], undefined);
+});
+
 test('i18n is off by default and warns on JSX literals when enabled', async () => {
   assert.equal((await lint('literal-text.tsx')).some(message => message.ruleId?.startsWith('formatjs/')), false);
   const enabled = await lint('literal-text.tsx', { i18n: true });

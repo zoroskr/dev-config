@@ -30,16 +30,17 @@ export default zoroskr(
 
 The first argument takes these options; any other key is passed to `antfu()` (`nextjs`, `ignores`, `typescript`, ...). Every argument after it is a flat config appended at the end, so it can override package rules.
 
-| Option             | Default | Effect                                                                                                   |
-| ------------------ | ------- | -------------------------------------------------------------------------------------------------------- |
-| `tsconfigPath`     | none    | Enables type-aware rules (`strict-boolean-expressions`, `no-unnecessary-condition`, ...)                 |
-| `react`            | `true`  | React rules and `jsx-a11y`                                                                               |
-| `query`            | `false` | TanStack Query rules                                                                                     |
-| `tailwind`         | `false` | Tailwind rules; pass an object to set `settings.tailwindcss`                                             |
-| `i18n`             | `false` | Warns on literal strings in JSX and UI objects                                                           |
-| `localRules`       | `{}`    | Extra rules registered in the `local` plugin, next to `local/no-comments`; enable them in a later config |
-| `restrictedSyntax` | `[]`    | Extra `no-restricted-syntax` entries for TypeScript files, appended to the package selectors             |
-| `layeredBackend`   | `false` | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs  |
+| Option             | Default | Effect                                                                                                    |
+| ------------------ | ------- | --------------------------------------------------------------------------------------------------------- |
+| `tsconfigPath`     | none    | Enables type-aware rules (`strict-boolean-expressions`, `no-unnecessary-condition`, `no-deprecated`, ...) |
+| `react`            | `true`  | React rules and `jsx-a11y`                                                                                |
+| `query`            | `false` | TanStack Query rules                                                                                      |
+| `tailwind`         | `false` | Tailwind rules; pass an object to set `settings.tailwindcss`                                              |
+| `i18n`             | `false` | Warns on literal strings in JSX and UI objects                                                            |
+| `localRules`       | `{}`    | Extra rules registered in the `local` plugin, next to `local/no-comments`; enable them in a later config  |
+| `restrictedSyntax` | `[]`    | Extra `no-restricted-syntax` entries for TypeScript files, appended to the package selectors              |
+| `layeredBackend`   | `false` | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs   |
+| `isomorphic`       | `false` | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`          |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
 
@@ -58,6 +59,17 @@ What it enforces:
 - Strict boolean expressions without nullable or string/number shortcuts.
 - Security and secret-detection rules as warnings.
 - `import 'server-only';`, never the bare `'server-only';` no-op directive.
+- With `tsconfigPath`, deprecated APIs are errors (`ts/no-deprecated`), e.g. Zod 4's `z.string().email()`.
+- No TS `enum` (use an `as const` array or `z.enum`) and no `inferRouterOutputs` / `inferRouterInputs` (import the type exported beside its schema).
+- No `types.ts` or `*.types.ts` files (`local/no-types-file`; `.d.ts` passes).
+- No `z.infer|input|output<typeof schema>` outside a type alias of a module-level `const` schema of the same file (`local/no-inline-zod-infer`). In schema files a local schema may be derived anywhere, an imported one never. Schema files match the rule option `schemaFiles`, regex sources that replace the default `['\\.schema\\.[cm]?tsx?$', '/schemas/.+\\.[cm]?tsx?$']`:
+
+```js
+export default zoroskr({}, {
+  files: ['**/*.{ts,tsx}'],
+  rules: { 'local/no-inline-zod-infer': ['error', { schemaFiles: ['\\.schema(?:-adapter)?\\.ts$', '/schemas/'] }] },
+});
+```
 
 With `layeredBackend` (skill `trpc-layered-backend`), default globs `**/*.{service,repository,router,schema}.ts`:
 
@@ -66,9 +78,20 @@ With `layeredBackend` (skill `trpc-layered-backend`), default globs `**/*.{servi
 | `services`     | `throw new Error`, `z.*` schemas, non-function exports (inline, local list or default, resolved by `local/service-exports-functions`), re-exports, classes, `Record<string, unknown>` anywhere, module-scope policy constants |
 | `repositories` | `z.*` schemas, `Record<string, unknown>` anywhere, `console`, imports of `@trpc/server` or services                                                                                                                           |
 | `routers`      | `try`, `throw`, and procedures without `.output()` (`local/require-procedure-output`)                                                                                                                                         |
-| `schemas`      | `{ success: z.literal(...) }` outputs                                                                                                                                                                                         |
+| `schemas`      | `{ success: z.literal(...) }` outputs, `Record<string, unknown>` and unknown index signatures                                                                                                                                 |
 
 Layer blocks repeat the package and `restrictedSyntax` selectors, since flat config replaces `no-restricted-syntax` per block.
+
+With `isomorphic` (skill `zod-schemas`), two local rules guard code shared by client and server. Both are local rules, so a consumer's own `no-restricted-imports` block or the layer selectors never replace them.
+
+| Key                | Default                                                        | Rule                                                                                                                                                                                     |
+| ------------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `files`            | `['**/shared/**/*.{ts,tsx}']`                                  | `local/isomorphic-boundary`: rejects imports, re-exports and literal `import()` of Node builtins (`node:*`, `fs`, `path`, ...), `server-only` and `forbiddenImports`; `process.env`; JSX |
+| `schemaFiles`      | `['**/shared/**/*.schema.ts', '**/shared/**/schemas/**/*.ts']` | `local/no-schema-default`: rejects `.default()` unless inside a top-level const named `*InputSchema`                                                                                     |
+| `ignores`          | `['**/*.test.{ts,tsx}']`                                       | Excluded from both rules                                                                                                                                                                 |
+| `forbiddenImports` | `[]`                                                           | Extra module patterns for `local/isomorphic-boundary`; `*` matches any characters, e.g. `['firebase-admin', 'firebase-admin/*']`                                                         |
+
+Type-only `import type` / `export type` declarations pass the boundary, since they are erased from the bundle.
 
 ## TypeScript
 
