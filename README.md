@@ -60,9 +60,10 @@ What it enforces:
 - Security and secret-detection rules as warnings.
 - `import 'server-only';`, never the bare `'server-only';` no-op directive.
 - With `tsconfigPath`, deprecated APIs are errors (`ts/no-deprecated`), e.g. Zod 4's `z.string().email()`.
-- No TS `enum` (use an `as const` array or `z.enum`) and no `inferRouterOutputs` / `inferRouterInputs` (import the type exported beside its schema).
+- No TS `enum` (use an `as const` array or `z.enum`) and no `inferRouterOutputs` / `inferRouterInputs`, imported, renamed or qualified (import the type exported beside its schema).
+- No Zod 4 `message` param (`local/no-zod-message-param`): an object argument with a `message` key in a call chain rooted at a `zod` import, e.g. `z.string().min(1, { message })`; pass `{ error: '…' }`. Shapes and data (`z.object({ message })`, `.parse()`, `.default()`, `.meta()`) and `ctx.addIssue({ message })` pass. Schemas reached through a variable (`schema.refine(...)`) are not resolved.
 - No `types.ts` or `*.types.ts` files (`local/no-types-file`; `.d.ts` passes).
-- No `z.infer|input|output<typeof schema>` outside a type alias of a module-level `const` schema of the same file (`local/no-inline-zod-infer`). In schema files a local schema may be derived anywhere, an imported one never. Schema files match the rule option `schemaFiles`, regex sources that replace the default `['\\.schema\\.[cm]?tsx?$', '/schemas/.+\\.[cm]?tsx?$']`:
+- No `z.infer|input|output<typeof schema>` (any `zod` import: namespace, default, renamed `z`, or named `infer`/`input`/`output`) outside a type alias of a module-level `const` schema of the same file (`local/no-inline-zod-infer`). In schema files a local schema may be derived anywhere, an imported one never. Schema files match the rule option `schemaFiles`, regex sources that replace the default `['\\.schema\\.[cm]?tsx?$', '/schemas/.+\\.[cm]?tsx?$']`:
 
 ```js
 export default zoroskr({}, {
@@ -80,16 +81,16 @@ With `layeredBackend` (skill `trpc-layered-backend`), default globs `**/*.{servi
 | `routers`      | `try`, `throw`, and procedures without `.output()` (`local/require-procedure-output`)                                                                                                                                         |
 | `schemas`      | `{ success: z.literal(...) }` outputs, `Record<string, unknown>` and unknown index signatures                                                                                                                                 |
 
-Layer blocks repeat the package and `restrictedSyntax` selectors, since flat config replaces `no-restricted-syntax` per block.
+`Record<string, unknown>` means a `string` key; `Record<'a' | 'b', unknown>` passes. Layer blocks repeat the package and `restrictedSyntax` selectors, since flat config replaces `no-restricted-syntax` per block.
 
 With `isomorphic` (skill `zod-schemas`), two local rules guard code shared by client and server. Both are local rules, so a consumer's own `no-restricted-imports` block or the layer selectors never replace them.
 
-| Key                | Default                                                        | Rule                                                                                                                                                                                     |
-| ------------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `files`            | `['**/shared/**/*.{ts,tsx}']`                                  | `local/isomorphic-boundary`: rejects imports, re-exports and literal `import()` of Node builtins (`node:*`, `fs`, `path`, ...), `server-only` and `forbiddenImports`; `process.env`; JSX |
-| `schemaFiles`      | `['**/shared/**/*.schema.ts', '**/shared/**/schemas/**/*.ts']` | `local/no-schema-default`: rejects `.default()` unless inside a top-level const named `*InputSchema`                                                                                     |
-| `ignores`          | `['**/*.test.{ts,tsx}']`                                       | Excluded from both rules                                                                                                                                                                 |
-| `forbiddenImports` | `[]`                                                           | Extra module patterns for `local/isomorphic-boundary`; `*` matches any characters, e.g. `['firebase-admin', 'firebase-admin/*']`                                                         |
+| Key                | Default                                                        | Rule                                                                                                                                                                                                                   |
+| ------------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `files`            | `['**/shared/**/*.{ts,tsx}']`                                  | `local/isomorphic-boundary`: rejects imports, re-exports and literal `import()` of Node builtins (`node:*`, `fs`, `path`, ...), `server-only` and `forbiddenImports`; `process.env` and `const { env } = process`; JSX |
+| `schemaFiles`      | `['**/shared/**/*.schema.ts', '**/shared/**/schemas/**/*.ts']` | `local/no-schema-default`: rejects `.default()` and `.prefault()` unless inside a top-level const named `*InputSchema`                                                                                                 |
+| `ignores`          | `['**/*.test.{ts,tsx}']`                                       | Excluded from both rules                                                                                                                                                                                               |
+| `forbiddenImports` | `[]`                                                           | Extra module patterns for `local/isomorphic-boundary`; `*` matches any characters, e.g. `['firebase-admin', 'firebase-admin/*']`                                                                                       |
 
 Type-only `import type` / `export type` declarations pass the boundary, since they are erased from the bundle.
 

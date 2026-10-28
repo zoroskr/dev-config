@@ -26,6 +26,9 @@ for (const [name, code] of [
   ['z.input of a local schema', `${localSchema}type FormInput = z.input<typeof formSchema>;`],
   ['z.output of a local schema', `${localSchema}type FormOutput = z.output<typeof formSchema>;`],
   ['a non-zod qualified generic', 'import type { Prisma } from \'p\';\ntype Row = Prisma.infer<typeof x>;\nconst x = 1;'],
+  ['a renamed zod import aliasing a local schema', 'import { z as zod } from \'zod\';\nconst formSchema = zod.object({});\ntype FormValues = zod.infer<typeof formSchema>;'],
+  ['a named infer import aliasing a local schema', 'import type { infer as Infer } from \'zod\';\nimport { z } from \'zod\';\nconst formSchema = z.object({});\ntype FormValues = Infer<typeof formSchema>;'],
+  ['a non-zod named infer import', 'import type { infer as Infer } from \'other\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = Infer<typeof userSchemaRaw>;'],
 ]) {
   test(`accepts ${name}`, async () => {
     assert.deepEqual(await ruleMessages(code), []);
@@ -60,6 +63,8 @@ for (const [name, code] of [
   ['a parameter shadowing a local schema', `${localSchema}import type { imported } from './source';\nexport function f(formSchema: typeof imported) {\n  type FormValues = z.infer<typeof formSchema>;\n  return formSchema;\n}`],
   ['a mutable let schema', 'import { z } from \'zod\';\nlet formSchema = z.object({});\nexport type FormValues = z.infer<typeof formSchema>;'],
   ['a qualified schema reference', 'import { z } from \'zod\';\nimport * as schemas from \'./other.schema\';\nexport type User = z.infer<typeof schemas.userSchema>;'],
+  ['a renamed z import of an imported schema', 'import type { z as zod } from \'zod\';\nimport type { importedSchema } from \'./other.schema\';\nexport type U = zod.infer<typeof importedSchema>;'],
+  ['a named infer import of an imported schema', 'import type { infer as Infer } from \'zod\';\nimport type { importedSchema } from \'./other.schema\';\nexport type U = Infer<typeof importedSchema>;'],
 ]) {
   test(`reports ${name} inside a schema file`, async () => {
     const messages = await ruleMessages(code, 'src/shared/usuarios/schemas/user.schema.ts');
@@ -94,6 +99,14 @@ for (const [name, code] of [
   ['a parameter shadowing a local schema', `${localSchema}import type { imported } from './source';\nexport function f(formSchema: typeof imported) {\n  type FormValues = z.infer<typeof formSchema>;\n  return formSchema;\n}`],
   ['a union body of a local schema', `${localSchema}type FormValues = z.infer<typeof formSchema> | null;`],
   ['a namespace import alias of an imported schema', 'import type * as z from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = z.infer<typeof userSchemaRaw>;'],
+  ['an unimported global z', 'import type { userSchemaRaw } from \'./user\';\ntype Editor = z.infer<typeof userSchemaRaw>;'],
+  ['a renamed namespace import', 'import type * as zod from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = zod.infer<typeof userSchemaRaw>;'],
+  ['a renamed z import', 'import type { z as zod } from \'zod\';\nimport type { importedSchema } from \'./user\';\ntype U = zod.infer<typeof importedSchema>;'],
+  ['a default zod import', 'import zod from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = zod.output<typeof userSchemaRaw>;'],
+  ['a zod/v4 import', 'import type { z } from \'zod/v4\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = z.infer<typeof userSchemaRaw>;'],
+  ['a named infer import', 'import type { infer as Infer } from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = Infer<typeof userSchemaRaw>;'],
+  ['a named input import', 'import type { input } from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = input<typeof userSchemaRaw>;'],
+  ['a named output import inline', 'import type { output } from \'zod\';\nimport { z } from \'zod\';\nconst formSchema = z.object({});\nexport function f(values: output<typeof formSchema>) { return values; }'],
 ]) {
   test(`reports ${name}`, async () => {
     const messages = await ruleMessages(code);

@@ -1,27 +1,33 @@
+const { resolveVariable, zodImportSpecifier } = require('./zod-binding.cjs');
+
 const ZOD_TYPE_HELPERS = new Set(['infer', 'input', 'output']);
+const ZOD_NAMESPACE_SPECIFIERS = new Set(['ImportNamespaceSpecifier', 'ImportDefaultSpecifier']);
 
 const DEFAULT_SCHEMA_FILES = ['\\.schema\\.[cm]?tsx?$', '/schemas/.+\\.[cm]?tsx?$'];
 
-const isZodTypeHelper = node => node.typeName.type === 'TSQualifiedName'
-  && node.typeName.left.type === 'Identifier'
-  && node.typeName.left.name === 'z'
-  && ZOD_TYPE_HELPERS.has(node.typeName.right.name);
+const isZodNamespace = (scope, name) => {
+  const specifier = zodImportSpecifier(scope, name);
+  if (specifier === null) {
+    return name === 'z' && resolveVariable(scope, name) === null;
+  }
+  return ZOD_NAMESPACE_SPECIFIERS.has(specifier.type) || specifier.imported.name === 'z';
+};
+
+const isZodTypeHelper = (scope, { typeName }) => {
+  if (typeName.type === 'TSQualifiedName') {
+    return typeName.left.type === 'Identifier'
+      && ZOD_TYPE_HELPERS.has(typeName.right.name)
+      && isZodNamespace(scope, typeName.left.name);
+  }
+  const specifier = typeName.type === 'Identifier' ? zodImportSpecifier(scope, typeName.name) : null;
+  return specifier?.type === 'ImportSpecifier' && ZOD_TYPE_HELPERS.has(specifier.imported.name);
+};
 
 const queriedSchemaName = (node) => {
   const [argument] = (node.typeArguments ?? node.typeParameters)?.params ?? [];
   return argument?.type === 'TSTypeQuery' && argument.exprName.type === 'Identifier'
     ? argument.exprName.name
     : null;
-};
-
-const resolveVariable = (scope, name) => {
-  for (let current = scope; current !== null; current = current.upper) {
-    const variable = current.set.get(name);
-    if (variable !== undefined) {
-      return variable;
-    }
-  }
-  return null;
 };
 
 const isModuleConst = variable => variable !== null
@@ -50,11 +56,12 @@ module.exports = {
 
     return {
       TSTypeReference(node) {
-        if (!isZodTypeHelper(node)) {
+        const scope = context.sourceCode.getScope(node);
+        if (!isZodTypeHelper(scope, node)) {
           return;
         }
         const schema = queriedSchemaName(node);
-        const isLocalSchema = schema !== null && isModuleConst(resolveVariable(context.sourceCode.getScope(node), schema));
+        const isLocalSchema = schema !== null && isModuleConst(resolveVariable(scope, schema));
         const isAllowed = isSchemaFile
           ? isLocalSchema
           : isLocalSchema && node.parent.type === 'TSTypeAliasDeclaration' && node.parent.typeAnnotation === node;

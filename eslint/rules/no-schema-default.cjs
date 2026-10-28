@@ -1,9 +1,10 @@
 const INPUT_SCHEMA = /InputSchema$/u;
+const DEFAULT_METHODS = new Set(['default', 'prefault']);
 
 const isDefaultCall = ({ callee }) => callee.type === 'MemberExpression'
-  && (callee.computed
-    ? callee.property.type === 'Literal' && callee.property.value === 'default'
-    : callee.property.name === 'default');
+  && DEFAULT_METHODS.has(callee.computed
+    ? callee.property.type === 'Literal' && callee.property.value
+    : callee.property.name);
 
 const isTopLevelDeclarator = (node) => {
   const declaration = node.parent;
@@ -21,7 +22,7 @@ module.exports = {
     type: 'problem',
     schema: [],
     messages: {
-      schemaDefault: 'Do not use `.default()` in shared data or output schemas; the server sets every value explicitly. Defaults belong only in a top-level `*InputSchema`. See skill `zod-schemas`.',
+      schemaDefault: 'Do not use `.default()` or `.prefault()` in shared data or output schemas; the server sets every value explicitly. Defaults belong only in a top-level `*InputSchema`. See skill `zod-schemas`.',
     },
   },
   create(context) {

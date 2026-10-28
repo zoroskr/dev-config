@@ -15,6 +15,7 @@
     "./eslint/rules/no-inline-zod-infer": "./eslint/rules/no-inline-zod-infer.cjs",
     "./eslint/rules/no-schema-default": "./eslint/rules/no-schema-default.cjs",
     "./eslint/rules/no-types-file": "./eslint/rules/no-types-file.cjs",
+    "./eslint/rules/no-zod-message-param": "./eslint/rules/no-zod-message-param.cjs",
     "./eslint/rules/require-procedure-output": "./eslint/rules/require-procedure-output.cjs",
     "./tsconfig/strict.json": "./tsconfig/strict.json",
     "./commitlint": "./commitlint/index.js",
@@ -29,8 +30,10 @@
     "eslint/rules/no-inline-zod-infer.cjs",
     "eslint/rules/no-schema-default.cjs",
     "eslint/rules/no-types-file.cjs",
+    "eslint/rules/no-zod-message-param.cjs",
     "eslint/rules/require-procedure-output.cjs",
     "eslint/rules/service-exports-functions.cjs",
+    "eslint/rules/zod-binding.cjs",
     "tsconfig/strict.json"
   ],
   "engines": {

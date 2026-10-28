@@ -7,7 +7,7 @@ import zoroskr from '../eslint/index.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = join(root, 'test/fixtures/app');
-const zodRules = new Set(['no-restricted-syntax', 'local/isomorphic-boundary', 'local/no-schema-default', 'local/no-types-file', 'local/no-inline-zod-infer']);
+const zodRules = new Set(['no-restricted-syntax', 'local/isomorphic-boundary', 'local/no-schema-default', 'local/no-types-file', 'local/no-inline-zod-infer', 'local/no-zod-message-param']);
 const isomorphicRules = new Set(['local/isomorphic-boundary', 'local/no-schema-default']);
 const isomorphic = { isomorphic: true };
 const forbidFirebase = { isomorphic: { forbiddenImports: ['firebase-admin', 'firebase-admin/*'] } };
@@ -38,6 +38,8 @@ const rejected = [
   ['shared/a/read.ts', 'export const load = () => import(\'node:fs\');\n', 'local/isomorphic-boundary', /Node builtin/],
   ['shared/a/read.ts', 'export const key = process.env.API_KEY;\n', 'local/isomorphic-boundary', /process\.env/],
   ['shared/a/read.ts', 'export const key = process.env[\'API_KEY\'];\n', 'local/isomorphic-boundary', /process\.env/],
+  ['shared/a/read.ts', 'const { env } = process;\n\nexport const key = env.API_KEY;\n', 'local/isomorphic-boundary', /process\.env/],
+  ['shared/a/read.ts', 'const { env: variables } = process;\n\nexport const key = variables.API_KEY;\n', 'local/isomorphic-boundary', /process\.env/],
   ['shared/a/view.tsx', 'export const View = () => <div><span>a</span></div>;\n', 'local/isomorphic-boundary', /JSX/],
   ['shared/a/view.tsx', 'export const View = () => <></>;\n', 'local/isomorphic-boundary', /JSX/],
   ['shared/a/read.ts', 'import { getFirestore } from \'firebase-admin/firestore\';\n\nexport const db = () => getFirestore();\n', 'local/isomorphic-boundary', /`firebase-admin\/firestore`/, forbidFirebase],
@@ -48,14 +50,30 @@ const rejected = [
   ['shared/a/schemas/index.ts', `${zodSchema}export const aSchema = z.string().default('x');\n`, 'local/no-schema-default', /\.default\(\)/],
   [sharedSchema, `${zodSchema}export const listAOutputSchema = z.object({ limit: z.number().default(20) });\n`, 'local/no-schema-default', /\.default\(\)/],
   [sharedSchema, `${zodSchema}export function build() {\n  const aInputSchema = z.string().default('x');\n  return aInputSchema;\n}\n`, 'local/no-schema-default', /\.default\(\)/],
+  [sharedSchema, `${zodSchema}export const aSchema = z.object({ name: z.string().prefault('x') });\n`, 'local/no-schema-default', /\.prefault\(\)/],
+  [sharedSchema, `${zodSchema}export const listAOutputSchema = z.object({ limit: z.number().prefault(20) });\n`, 'local/no-schema-default', /\.prefault\(\)/],
   ['feature/types.ts', 'export type A = { id: string };\n', 'local/no-types-file', /`types\.ts`/],
   ['feature/user.types.ts', 'export type A = { id: string };\n', 'local/no-types-file', /`types\.ts`/],
   ['feature/types.tsx', 'export type A = { id: string };\n', 'local/no-types-file', /`types\.ts`/],
   ['feature/view.types.tsx', 'export type A = { id: string };\n', 'local/no-types-file', /`types\.ts`/],
-  ['feature/a.ts', 'import type { inferRouterOutputs } from \'@trpc/server\';\nimport type { AppRouter } from \'./root\';\n\nexport type Outputs = inferRouterOutputs<AppRouter>;\n', 'no-restricted-syntax', /exported beside its schema/],
-  ['feature/a.ts', 'import type { inferRouterInputs } from \'@trpc/server\';\nimport type { AppRouter } from \'./root\';\n\nexport type Inputs = inferRouterInputs<AppRouter>;\n', 'no-restricted-syntax', /exported beside its schema/],
+  ['feature/a.ts', 'import type { AppRouter } from \'./root\';\n\nexport type Outputs = inferRouterOutputs<AppRouter>;\n', 'no-restricted-syntax', /exported beside its schema/],
+  ['feature/a.ts', 'import type { AppRouter } from \'./root\';\n\nexport type Inputs = inferRouterInputs<AppRouter>;\n', 'no-restricted-syntax', /exported beside its schema/],
+  ['feature/a.ts', 'import type { inferRouterOutputs as Outputs } from \'@trpc/server\';\nimport type { AppRouter } from \'./root\';\n\nexport type RouterOutputs = Outputs<AppRouter>;\n', 'no-restricted-syntax', /exported beside its schema/],
+  ['feature/a.ts', 'import type { inferRouterInputs as Inputs } from \'@trpc/server\';\nimport type { AppRouter } from \'./root\';\n\nexport type RouterInputs = Inputs<AppRouter>;\n', 'no-restricted-syntax', /exported beside its schema/],
+  ['feature/a.ts', 'import type * as trpc from \'@trpc/server\';\nimport type { AppRouter } from \'./root\';\n\nexport type Outputs = trpc.inferRouterOutputs<AppRouter>;\n', 'no-restricted-syntax', /exported beside its schema/],
+  ['feature/a.ts', 'import type * as trpc from \'@trpc/server\';\nimport type { AppRouter } from \'./root\';\n\nexport type Inputs = trpc.inferRouterInputs<AppRouter>;\n', 'no-restricted-syntax', /exported beside its schema/],
+  ['feature/a.ts', `${zodSchema}export const name = z.string().min(1, { message: 'x' });\n`, 'local/no-zod-message-param', /\{ error: '…' \}/],
+  ['feature/a.ts', `${zodSchema}export const email = z.email({ message: 'x' });\n`, 'local/no-zod-message-param', /\{ error: '…' \}/],
+  ['feature/a.ts', `${zodSchema}export const name = z.string({ message: 'x' });\n`, 'local/no-zod-message-param', /\{ error: '…' \}/],
+  ['feature/a.ts', `${zodSchema}export const name = z.string().refine(value => value.length > 0, { message: 'x' });\n`, 'local/no-zod-message-param', /\{ error: '…' \}/],
+  ['feature/a.ts', `${zodSchema}export const item = z.object({ id: z.string() }, { message: 'x' });\n`, 'local/no-zod-message-param', /\{ error: '…' \}/],
+  ['feature/a.ts', 'import * as zod from \'zod\';\n\nexport const name = zod.string({ \'message\': \'x\' });\n', 'local/no-zod-message-param', /\{ error: '…' \}/],
+  ['feature/a.ts', 'import { string } from \'zod\';\n\nexport const name = string().max(3, { message: \'x\' });\n', 'local/no-zod-message-param', /\{ error: '…' \}/],
+  ['feature/a.tsx', `${zodSchema}export const name = z.string().trim().min(1, { message: 'x' });\n`, 'local/no-zod-message-param', /\{ error: '…' \}/],
   ['feature/a.ts', 'export enum Status {\n  Open = \'open\',\n}\n', 'no-restricted-syntax', /`as const` array or `z\.enum`/],
   ['feature/a.schema.ts', 'export type Meta = Record<string, unknown>;\n', 'no-restricted-syntax', /Record<string, unknown>.*zod-schemas/, layered],
+  [sharedSchema, 'import type { z as zod } from \'zod\';\nimport type { importedSchema } from \'./user.schema\';\n\nexport type U = zod.infer<typeof importedSchema>;\n', 'local/no-inline-zod-infer', /importedSchema/],
+  [sharedSchema, 'import type { infer as Infer } from \'zod\';\nimport type { importedSchema } from \'./user.schema\';\n\nexport type U = Infer<typeof importedSchema>;\n', 'local/no-inline-zod-infer', /importedSchema/],
   ['feature/a.schema.ts', 'export type Meta = { [key: string]: unknown };\n', 'no-restricted-syntax', /Record<string, unknown>.*zod-schemas/, layered],
   [sharedSchema, 'import type { z } from \'zod\';\nimport type { userSchema } from \'./user.schema\';\n\nexport type User = z.infer<typeof userSchema>;\n', 'local/no-inline-zod-infer', /userSchema/],
   [sharedSchema, `${zodSchema}import { userSchema } from './user.schema';\n\nexport const aSchema = z.object({ id: z.string() });\n\nexport const check: z.output<typeof aSchema> extends z.output<typeof userSchema> ? true : false = true;\n`, 'local/no-inline-zod-infer', /userSchema/],
@@ -91,6 +109,23 @@ const accepted = [
   ['feature/types-of.ts', 'export type A = { id: string };\n'],
   ['feature/a.ts', 'export const STATUSES = [\'open\', \'closed\'] as const;\n\nexport type Status = (typeof STATUSES)[number];\n'],
   ['feature/a.schema.ts', 'export type Labels = Record<Status, string>;\n', layered],
+  ['feature/a.schema.ts', 'export type Labels = Record<\'a\' | \'b\', unknown>;\n', layered],
+  ['shared/a/read.ts', 'export const read = (process: { env: string }) => {\n  const { env } = process;\n  return env;\n};\n'],
+  ['shared/a/read.ts', 'const { argv } = process;\n\nexport const first = argv[0];\n'],
+  [sharedSchema, `${zodSchema}export const listAInputSchema = z.object({ limit: z.number().prefault(20) });\n`],
+  ['feature/a.ts', `${zodSchema}export const name = z.string().superRefine((value, ctx) => {\n  ctx.addIssue({ code: 'custom', message: value });\n});\n`],
+  ['feature/a.ts', `${zodSchema}export const name = z.string().min(1, { error: 'x' });\n`],
+  ['feature/a.ts', `${zodSchema}export const item = z.object({ message: z.string() });\n`],
+  ['feature/a.ts', `${zodSchema}export const item = z.strictObject({ message: z.string() });\n`],
+  ['feature/a.ts', `${zodSchema}export const item = z.object({ id: z.string() }).extend({ message: z.string() });\n`],
+  ['feature/a.ts', `${zodSchema}export const item = z.object({ message: z.string() }).pick({ message: true });\n`],
+  ['feature/a.ts', `${zodSchema}export const item = z.object({ message: z.string() }).parse({ message: 'x' });\n`],
+  ['feature/a.ts', `${zodSchema}export const item = z.object({ message: z.string() }).default({ message: 'x' });\n`],
+  ['feature/a.ts', `${zodSchema}export const item = z.object({ id: z.string() }).meta({ message: 'x' });\n`],
+  ['feature/a.ts', 'export const show = (toast: { error: (value: { message: string }) => void }) => toast.error({ message: \'x\' });\n'],
+  ['feature/a.ts', 'const z = { string: (params: { message: string }) => params };\n\nexport const name = z.string({ message: \'x\' });\n'],
+  [sharedSchema, 'import type { infer as Infer } from \'zod\';\nimport { z } from \'zod\';\n\nexport const aSchema = z.object({ id: z.string() });\n\nexport type A = Infer<typeof aSchema>;\n'],
+  ['feature/a.ts', 'import type { Infer } from \'other\';\nimport type { userSchema } from \'./user.schema\';\n\nexport type User = Infer<typeof userSchema>;\n'],
   [sharedSchema, `${zodSchema}export const aSchema = z.object({ id: z.string() });\n\nexport type A = z.infer<typeof aSchema>;\n`],
   [sharedSchema, `${zodSchema}export const aSchema = z.object({ id: z.string() });\n\nexport function read(value: z.infer<typeof aSchema>) {\n  return value.id;\n}\n`],
   [sharedSchema, `${zodSchema}export const aSchema = z.object({ id: z.string() });\n\nexport type A = { id: string };\n\nexport const check: z.output<typeof aSchema> extends A ? true : false = true;\n`],
@@ -138,6 +173,19 @@ test('layer selectors and no-schema-default both fire in a shared schema file', 
   const code = `${zodSchema}export const aSchema = z.object({ name: z.string().default('x'), meta: z.custom<Record<string, unknown>>() });\n`;
   const rules = (await lint(sharedSchema, code, { isomorphic: true, layeredBackend: true })).map(message => message.ruleId);
   assert.deepEqual(rules.toSorted(), ['local/no-schema-default', 'no-restricted-syntax']);
+});
+
+test('an imported inferRouterOutputs is reported at the import and at the use', async () => {
+  const code = 'import type { inferRouterOutputs } from \'@trpc/server\';\nimport type { AppRouter } from \'./root\';\n\nexport type Outputs = inferRouterOutputs<AppRouter>;\n';
+  const messages = await lint('feature/a.ts', code, {});
+  assert.deepEqual(messages.map(message => message.line), [1, 4]);
+  assert.ok(messages.every(message => /exported beside its schema.*See skill `zod-schemas`\.$/.test(message.message)));
+});
+
+test('no-zod-message-param reports each message key once', async () => {
+  const code = `${zodSchema}export const name = z.string({ message: 'a' }).min(1, { message: 'b' });\n`;
+  const messages = await lint('feature/a.ts', code, {});
+  assert.deepEqual(messages.map(message => [message.ruleId, message.column]), [['local/no-zod-message-param', 32], ['local/no-zod-message-param', 57]]);
 });
 
 test('no-types-file and no-inline-zod-infer are on without options', async () => {

@@ -27,6 +27,17 @@ const isProcessEnv = node => node.object.type === 'Identifier'
     ? node.property.type === 'Literal' && node.property.value === 'env'
     : node.property.name === 'env');
 
+const isEnvKey = ({ type, computed, key }) => type === 'Property'
+  && ((key.type === 'Identifier' && !computed && key.name === 'env')
+    || (key.type === 'Literal' && key.value === 'env'));
+
+const destructuredSource = (node) => {
+  if (node.parent.type === 'VariableDeclarator' && node.parent.id === node) {
+    return node.parent.init;
+  }
+  return node.parent.type === 'AssignmentExpression' && node.parent.left === node ? node.parent.right : null;
+};
+
 const isGlobalBinding = (scope, name) => {
   for (let current = scope; current !== null; current = current.upper) {
     const variable = current.set.get(name);
@@ -92,6 +103,12 @@ module.exports = {
       MemberExpression(node) {
         if (isProcessEnv(node) && isGlobalBinding(context.sourceCode.getScope(node), 'process')) {
           context.report({ node, messageId: 'processEnv' });
+        }
+      },
+      ObjectPattern(node) {
+        const source = destructuredSource(node);
+        if (source?.type === 'Identifier' && source.name === 'process' && isGlobalBinding(context.sourceCode.getScope(node), 'process')) {
+          node.properties.filter(isEnvKey).forEach(property => context.report({ node: property, messageId: 'processEnv' }));
         }
       },
       JSXElement: checkJsx,

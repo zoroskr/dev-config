@@ -7,6 +7,7 @@ import noComments from './rules/no-comments.cjs';
 import noInlineZodInfer from './rules/no-inline-zod-infer.cjs';
 import noSchemaDefault from './rules/no-schema-default.cjs';
 import noTypesFile from './rules/no-types-file.cjs';
+import noZodMessageParam from './rules/no-zod-message-param.cjs';
 import requireProcedureOutput from './rules/require-procedure-output.cjs';
 import serviceExportsFunctions from './rules/service-exports-functions.cjs';
 
@@ -35,10 +36,14 @@ const restrictedSyntax = [
     selector: 'ExpressionStatement[directive=\'server-only\']',
     message: 'Use `import \'server-only\';` — a bare \'server-only\' string is a no-op directive. See skill `trpc-layered-backend`.',
   },
-  {
-    selector: 'TSTypeReference[typeName.name=/^inferRouter(Outputs|Inputs)$/]',
+  ...[
+    'TSTypeReference[typeName.name',
+    'ImportSpecifier[imported.name',
+    'TSQualifiedName[right.name',
+  ].map(attribute => ({
+    selector: `${attribute}=/^inferRouter(Outputs|Inputs)$/]`,
     message: 'Import the output/input type exported beside its schema instead of `inferRouterOutputs`/`inferRouterInputs`. See skill `zod-schemas`.',
-  },
+  })),
   {
     selector: 'TSEnumDeclaration',
     message: 'Use an `as const` array or `z.enum`, not a TS enum; derive the type with `(typeof VALUES)[number]`. See skill `zod-schemas`.',
@@ -50,7 +55,7 @@ const zodConstruction = {
   message: 'Do not build Zod schemas in services or repositories; import them from a schema file. See skill `trpc-layered-backend`.',
 };
 
-const unknownValue = `[typeArguments.params.1.type='${'TSUnknown'}Keyword']`;
+const unknownValue = `[typeArguments.params.0.type='${'TSString'}Keyword'][typeArguments.params.1.type='${'TSUnknown'}Keyword']`;
 const unknownRecord = `TSTypeReference[typeName.name='Record']${unknownValue}`;
 const unknownIndexSignature = `TSIndexSignature > TSTypeAnnotation > ${'TSUnknown'}Keyword`;
 
@@ -312,6 +317,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'no-inline-zod-infer': noInlineZodInfer,
             'no-schema-default': noSchemaDefault,
             'no-types-file': noTypesFile,
+            'no-zod-message-param': noZodMessageParam,
             'require-procedure-output': requireProcedureOutput,
             'service-exports-functions': serviceExportsFunctions,
           },
@@ -354,6 +360,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
         ...typeScriptRules,
         'local/no-inline-zod-infer': 'error',
         'local/no-types-file': 'error',
+        'local/no-zod-message-param': 'error',
         'no-restricted-syntax': ['error', ...restrictedSyntax, ...extraRestrictedSyntax],
       },
     },
