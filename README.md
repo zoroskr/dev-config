@@ -45,6 +45,7 @@ The first argument takes these options; any other key is passed to `antfu()` (`n
 | `isomorphic`          | `false`  | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`                     |
 | `appRouter`           | `false`  | Next.js App Router structure rules; pass `{ app, shared, gateCallees, serverCallerModules }`                         |
 | `forms`               | `false`  | React Hook Form + Zod form rules; pass `{ files, schemaFiles, constantsFiles }`                                      |
+| `testSetupFiles`      | `[]`     | Test setup files (globs) allowed to call `vi.mock`/`vi.doMock` outside test files                                    |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
 
@@ -199,6 +200,27 @@ Test files (`*.test`, `*.spec`, `*.stories`) and `scripts/**` are exempt. `useFo
   - Submit gates: `isValid` destructured or read from `formState` (`const { formState: { isValid } } = useForm()`, `const { isValid } = formState`, `form.formState.isValid`, `const formState = form.formState`) or from `useFormState(…)` (`react-hook-form`, destructured, held in a `const` or read directly), and from a typed parameter as above (`({ formState: { isValid } }: UseFormReturn<V>)`, `props.form.formState.isValid`, `formState: FormState<V>`); a `mode` option other than `'onSubmit'`; a `disabled` JSX attribute whose expression compares with `''` (`===`, `!==`, `==`, `!=`, nested callbacks included).
   - A `mutateAsync(…)` call (destructured from a mutation result, renamed included, or `mutation.mutateAsync(…)`) that is awaited, returned or the body of an expression-bodied arrow, directly or at the head of a `.then`/`.finally` chain, and not awaited inside the `try` block of a `try`/`catch` in the same function; `try`/`finally` alone, the `catch` block and nested callbacks do not count, and a call returned without `await` inside the `try` block is reported because its rejection escapes the `catch` (`try { return mutateAsync(v); } catch { … }`; `return await mutateAsync(v)` passes). A chain whose last call is `.catch(…)` passes. A call returned (or the expression body) of a callback passes when the callback is handed, directly or through `.map`, array literals and `Promise.all`/`allSettled`/`race`/`any` arguments, to a call that is awaited inside the `try` block of a `try`/`catch` or whose chain ends in `.catch(…)`: `try { await Promise.all(changes.map(change => updateRole(change))); } catch { … }`. An array iteration (`.map`, `.flatMap`, `.forEach`, `.filter`, `.find`, `.some`, `.every` and the like) only counts inside a `Promise` combinator: `await changes.map(…)` or an awaited array literal does not settle its promises and is reported. Without that outer `try`/`catch`, or with an `await` inside the callback, it is reported. `mutate` and other sources' `mutateAsync` (SWR) pass. Mutation results are detected as in `local/no-mutation-in-effect`.
 - `local/no-schema-default` with `{ form: true }` (`schemaFiles`): every `.default()`/`.prefault()`, with no `*InputSchema` exemption; set initial values in the defaults object. The `isomorphic` schema block keeps its exemption.
+
+### Testing
+
+Skill `vitest-testing`. Always on; `testSetupFiles` lists the setup files that may hold global mocks:
+
+```js
+export default zoroskr(
+  { testSetupFiles: ['src/testing/setup.ts', 'src/testing/integration-setup.ts'] },
+  { files: ['**/*.test.{ts,tsx}'], rules: { 'local/test-colocation': ['error', { ignores: ['src/legacy/**'] }] } },
+);
+```
+
+| Files                                         | Rule                                                                                                                                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Test files (`*.test`, `*.spec`, `*.stories`)  | `no-restricted-syntax`: `console.*()` and `globalThis.console.*()` calls; `vi.spyOn(console, 'error')` passes. `test/hoisted-apis-on-top`: `vi.mock` inside a block or function |
+| `**/*.test.{ts,tsx}`                          | `local/no-http-mock`: imports, re-exports and literal `import()` of `msw`, `msw/*` and `nock` (type-only included); E2E `*.spec` files pass                                     |
+| `**/*.test.{ts,tsx}`                          | `local/test-colocation`: a `tests` or `__tests__` folder anywhere in the path, or no sibling `<stem>.ts`/`<stem>.tsx` (`foo.test.ts` and `foo.integration.test.ts` → `foo.ts`)  |
+| `**/*.integration.test.{ts,tsx}`              | `test/no-restricted-matchers`: `toHaveBeenCalledWith`, `toHaveBeenNthCalledWith`, `toHaveBeenLastCalledWith` and their `not.` forms; `toHaveBeenCalled(Times)` pass             |
+| Production TypeScript, minus `testSetupFiles` | `local/no-production-mock`: `vi.mock`/`vi.doMock` on the global `vi`/`vitest` or on `vi`/`vitest` imported from `vitest` (renamed included); a local `vi` passes                |
+
+The console selectors sit in the test-file `no-restricted-syntax` block next to the package, `restrictedSyntax` and fixture selectors. The HTTP-mock ban is a local rule, so a consumer's own `no-restricted-imports` block on test files never replaces it. `local/test-colocation` takes `ignores`, globs matched against the path relative to the ESLint working directory; it reads each folder through the shared two-second filesystem cache.
 
 ## TypeScript
 

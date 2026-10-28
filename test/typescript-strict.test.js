@@ -9,6 +9,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = join(root, 'test/fixtures/app');
 const strictRules = new Set(['no-restricted-syntax', 'no-console', 'local/no-console', 'ts/no-explicit-any', 'ts/no-non-null-assertion']);
 const CONSOLE_MESSAGE = 'Do not use `console` in production code; log through the project\'s error reporter. See skill `typescript-strict`.';
+const TEST_CONSOLE_MESSAGE = 'Do not call `console` in tests; assert on behavior, or spy with `vi.spyOn(console, …)` when the log is the behavior. See skill `vitest-testing`.';
 const SKILL = /See skill `typescript-strict`\.$/;
 const userType = 'type User = { id: string };\n\n';
 
@@ -72,7 +73,7 @@ const accepted = [
   ['a.ts', 'export function assertDefined(value: unknown): asserts value {\n  if (value == null) {\n    throw new TypeError(\'x\');\n  }\n}\n'],
   ['a.ts', 'export function one(): number {\n  return 1;\n}\n', { inferredReturnTypes: false }],
   ['a.service.ts', 'export function one(): number {\n  return 1;\n}\n', { inferredReturnTypes: false, layeredBackend: true }],
-  ['a.test.ts', 'export function run() {\n  console.error(\'x\');\n}\n'],
+  ['a.test.ts', 'export function run() {\n  return vi.spyOn(console, \'error\');\n}\n'],
   ['a.test.ts', 'export const ids: string[] = [];\n'],
   ['a.test.ts', 'export const labels: Record<string, string> = {};\n'],
   ['a.test.ts', `${userType}export const user = { id: '1' } satisfies User;\n`],
@@ -128,9 +129,10 @@ for (const [file, code, options] of accepted) {
   });
 }
 
-test('console.log in test files keeps the antfu no-console rule', async () => {
+test('console calls in test files keep the antfu no-console rule and the vitest-testing selector', async () => {
   const messages = await lint('a.test.ts', 'export function run() {\n  console.log(\'x\');\n}\n');
-  assert.deepEqual(messages.map(message => message.ruleId), ['no-console']);
+  assert.deepEqual(messages.map(message => message.ruleId).sort(), ['no-console', 'no-restricted-syntax']);
+  assert.deepEqual(messages.filter(message => message.ruleId === 'no-restricted-syntax').map(message => message.message), [TEST_CONSOLE_MESSAGE]);
 });
 
 test('console.log passes in scripts, where antfu turns no-console off', async () => {
@@ -160,7 +162,8 @@ test('base selectors still fire inside layer and test files', async () => {
   }
   const testMessages = (await lint('a.test.ts', code, { layeredBackend: true })).map(message => message.message);
   assert.ok(testMessages.some(message => message.startsWith('Do not use `any`')));
-  assert.equal(testMessages.some(message => message.includes('`console`')), false);
+  assert.equal(testMessages.includes(CONSOLE_MESSAGE), false);
+  assert.ok(testMessages.includes(TEST_CONSOLE_MESSAGE));
 });
 
 test('extra restricted syntax still fires inside test files', async () => {

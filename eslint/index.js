@@ -7,10 +7,12 @@ import appRouterSyntax from './rules/app-router-syntax.cjs';
 import isomorphicBoundary from './rules/isomorphic-boundary.cjs';
 import noComments from './rules/no-comments.cjs';
 import noConsole from './rules/no-console.cjs';
+import noHttpMock from './rules/no-http-mock.cjs';
 import noInlineObjectProps from './rules/no-inline-object-props.cjs';
 import noInlineZodInfer from './rules/no-inline-zod-infer.cjs';
 import noMutationInEffect from './rules/no-mutation-in-effect.cjs';
 import noProcessEnv from './rules/no-process-env.cjs';
+import noProductionMock from './rules/no-production-mock.cjs';
 import noQueryIsLoading from './rules/no-query-is-loading.cjs';
 import noSchemaDefault from './rules/no-schema-default.cjs';
 import noTypesFile from './rules/no-types-file.cjs';
@@ -25,10 +27,13 @@ import routeGlobalScope from './rules/route-global-scope.cjs';
 import routeLoading from './rules/route-loading.cjs';
 import routeSegmentConfig from './rules/route-segment-config.cjs';
 import serviceExportsFunctions from './rules/service-exports-functions.cjs';
+import testColocation from './rules/test-colocation.cjs';
 
 const sourceFiles = '**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}';
 const typeScriptFiles = ['**/*.ts', '**/*.tsx'];
-const testFiles = ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/*.stories.{ts,tsx}'];
+const unitTestFiles = ['**/*.test.{ts,tsx}'];
+const integrationTestFiles = ['**/*.integration.test.{ts,tsx}'];
+const testFiles = [...unitTestFiles, '**/*.spec.{ts,tsx}', '**/*.stories.{ts,tsx}'];
 const fixtureFiles = ['**/__fixtures__/**/*.{ts,tsx}', '**/*.fixture.{ts,tsx}', '**/*.fixtures.{ts,tsx}'];
 const productionIgnores = [...testFiles, 'scripts/**'];
 const processEnvIgnores = [...productionIgnores, '**/*.config.*'];
@@ -127,6 +132,18 @@ const testFileSyntax = [{
   selector: `VariableDeclaration[kind='const'] > VariableDeclarator[id.typeAnnotation]:matches(${fixtureInits.join(', ')})`,
   message: 'Use `satisfies T` for fixtures. See skill `typescript-strict`.',
 }];
+
+const testConsoleSyntax = [
+  'CallExpression[callee.object.name=\'console\']',
+  'CallExpression[callee.object.type=\'MemberExpression\'][callee.object.object.name=\'globalThis\'][callee.object.property.name=\'console\']',
+].map(selector => ({
+  selector,
+  message: 'Do not call `console` in tests; assert on behavior, or spy with `vi.spyOn(console, …)` when the log is the behavior. See skill `vitest-testing`.',
+}));
+
+const callArgumentMatchers = ['toHaveBeenCalledWith', 'toHaveBeenNthCalledWith', 'toHaveBeenLastCalledWith']
+  .flatMap(matcher => [matcher, `not.${matcher}`])
+  .map(chain => [chain, `Integration tests assert real stored reads, never mock call arguments (\`${chain}\`); read the persisted state instead. See skill \`vitest-testing\`.`]);
 
 const zodConstruction = {
   selector: 'CallExpression[callee.object.name=\'z\']',
@@ -483,6 +500,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     isomorphic = false,
     appRouter = false,
     forms = false,
+    testSetupFiles = [],
     inferredReturnTypes = true,
     envFiles,
     typescript = {},
@@ -520,10 +538,12 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'isomorphic-boundary': isomorphicBoundary,
             'no-comments': noComments,
             'no-console': noConsole,
+            'no-http-mock': noHttpMock,
             'no-inline-object-props': noInlineObjectProps,
             'no-inline-zod-infer': noInlineZodInfer,
             'no-mutation-in-effect': noMutationInEffect,
             'no-process-env': noProcessEnv,
+            'no-production-mock': noProductionMock,
             'no-query-is-loading': noQueryIsLoading,
             'no-schema-default': noSchemaDefault,
             'no-types-file': noTypesFile,
@@ -538,6 +558,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'route-loading': routeLoading,
             'route-segment-config': routeSegmentConfig,
             'service-exports-functions': serviceExportsFunctions,
+            'test-colocation': testColocation,
           },
         },
       },
@@ -597,7 +618,26 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     {
       name: 'zoroskr/typescript-tests',
       files: testFiles,
-      rules: { 'no-restricted-syntax': ['error', ...baseRestrictedSyntax, ...testFileSyntax] },
+      rules: {
+        'no-restricted-syntax': ['error', ...baseRestrictedSyntax, ...testFileSyntax, ...testConsoleSyntax],
+        'test/hoisted-apis-on-top': 'error',
+      },
+    },
+    {
+      name: 'zoroskr/vitest/unit-tests',
+      files: unitTestFiles,
+      rules: { 'local/no-http-mock': 'error', 'local/test-colocation': 'error' },
+    },
+    {
+      name: 'zoroskr/vitest/integration-tests',
+      files: integrationTestFiles,
+      rules: { 'test/no-restricted-matchers': ['error', Object.fromEntries(callArgumentMatchers)] },
+    },
+    {
+      name: 'zoroskr/vitest/production-mocks',
+      files: typeScriptFiles,
+      ignores: [...productionIgnores, ...testSetupFiles],
+      rules: { 'local/no-production-mock': 'error' },
     },
     {
       name: 'zoroskr/typescript-fixtures',

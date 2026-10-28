@@ -19,6 +19,7 @@ const GLOBAL_SKILLS = new Set([
   'zod-schemas',
 ]);
 const CUSTOM_MESSAGE_RULES = /(?:^|\/)no-restricted-(?:syntax|imports)$/u;
+const MATCHER_MESSAGE_RULES = /(?:^|\/)no-restricted-matchers$/u;
 
 function collectMessages(value, messages) {
   if (Array.isArray(value)) {
@@ -43,6 +44,9 @@ async function customMessages(options) {
     for (const [name, value] of Object.entries(block.rules ?? {})) {
       if (CUSTOM_MESSAGE_RULES.test(name)) {
         collectMessages(value, messages);
+      }
+      if (MATCHER_MESSAGE_RULES.test(name)) {
+        Object.values(value[1] ?? {}).forEach(message => messages.add(message));
       }
     }
     for (const rule of Object.values(block.plugins?.local?.rules ?? {})) {

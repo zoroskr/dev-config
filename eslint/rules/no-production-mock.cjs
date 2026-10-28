@@ -1,0 +1,38 @@
+const { exportedName, findVariable, isMemberNamed } = require('./process-env.cjs');
+
+const VITEST_NAMES = new Set(['vi', 'vitest']);
+const MOCK_METHODS = ['mock', 'doMock'];
+
+const isVitestObject = (scope, node) => {
+  if (node?.type !== 'Identifier') {
+    return false;
+  }
+  const [definition] = findVariable(scope, node.name)?.defs ?? [];
+  if (definition === undefined) {
+    return VITEST_NAMES.has(node.name);
+  }
+  return definition.type === 'ImportBinding'
+    && definition.parent.source.value === 'vitest'
+    && definition.node.type === 'ImportSpecifier'
+    && VITEST_NAMES.has(exportedName(definition.node.imported));
+};
+
+module.exports = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      productionMock: 'Do not call `vi.mock`/`vi.doMock` outside test files; mock inline at the top of the test file, or globally in a setup file listed in `testSetupFiles`. See skill `vitest-testing`.',
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const { callee } = node;
+        if (MOCK_METHODS.some(method => isMemberNamed(callee, method)) && isVitestObject(context.sourceCode.getScope(node), callee.object)) {
+          context.report({ node, messageId: 'productionMock' });
+        }
+      },
+    };
+  },
+};
