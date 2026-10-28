@@ -17,4 +17,6 @@ const zodImportSpecifier = (scope, name) => {
     : null;
 };
 
-module.exports = { resolveVariable, zodImportSpecifier };
+const importedName = specifier => (specifier.imported.type === 'Identifier' ? specifier.imported.name : specifier.imported.value);
+
+module.exports = { importedName, resolveVariable, zodImportSpecifier };

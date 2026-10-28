@@ -1,26 +1,32 @@
-const { resolveVariable, zodImportSpecifier } = require('./zod-binding.cjs');
+const { importedName, resolveVariable, zodImportSpecifier } = require('./zod-binding.cjs');
 
 const ZOD_TYPE_HELPERS = new Set(['infer', 'input', 'output']);
 const ZOD_NAMESPACE_SPECIFIERS = new Set(['ImportNamespaceSpecifier', 'ImportDefaultSpecifier']);
 
 const DEFAULT_SCHEMA_FILES = ['\\.schema\\.[cm]?tsx?$', '/schemas/.+\\.[cm]?tsx?$'];
 
-const isZodNamespace = (scope, name) => {
-  const specifier = zodImportSpecifier(scope, name);
-  if (specifier === null) {
-    return name === 'z' && resolveVariable(scope, name) === null;
+const isZodModuleObject = (scope, node) => {
+  const specifier = node.type === 'Identifier' ? zodImportSpecifier(scope, node.name) : null;
+  return specifier !== null && ZOD_NAMESPACE_SPECIFIERS.has(specifier.type);
+};
+
+const isZodNamespace = (scope, node) => {
+  if (node.type === 'TSQualifiedName') {
+    return node.right.name === 'z' && isZodModuleObject(scope, node.left);
   }
-  return ZOD_NAMESPACE_SPECIFIERS.has(specifier.type) || specifier.imported.name === 'z';
+  const specifier = zodImportSpecifier(scope, node.name);
+  if (specifier === null) {
+    return node.name === 'z' && resolveVariable(scope, node.name) === null;
+  }
+  return ZOD_NAMESPACE_SPECIFIERS.has(specifier.type) || importedName(specifier) === 'z';
 };
 
 const isZodTypeHelper = (scope, { typeName }) => {
   if (typeName.type === 'TSQualifiedName') {
-    return typeName.left.type === 'Identifier'
-      && ZOD_TYPE_HELPERS.has(typeName.right.name)
-      && isZodNamespace(scope, typeName.left.name);
+    return ZOD_TYPE_HELPERS.has(typeName.right.name) && isZodNamespace(scope, typeName.left);
   }
   const specifier = typeName.type === 'Identifier' ? zodImportSpecifier(scope, typeName.name) : null;
-  return specifier?.type === 'ImportSpecifier' && ZOD_TYPE_HELPERS.has(specifier.imported.name);
+  return specifier?.type === 'ImportSpecifier' && ZOD_TYPE_HELPERS.has(importedName(specifier));
 };
 
 const queriedSchemaName = (node) => {

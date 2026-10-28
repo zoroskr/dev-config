@@ -1,4 +1,4 @@
-const { zodImportSpecifier } = require('./zod-binding.cjs');
+const { importedName, zodImportSpecifier } = require('./zod-binding.cjs');
 
 const DATA_FIRST_METHODS = new Set([
   'catch',
@@ -31,6 +31,20 @@ const DATA_FIRST_METHODS = new Set([
   'spa',
   'strictObject',
 ]);
+const DATA_FUNCTIONS = new Set([
+  'decode',
+  'decodeAsync',
+  'encode',
+  'encodeAsync',
+  'parse',
+  'parseAsync',
+  'safeDecode',
+  'safeDecodeAsync',
+  'safeEncode',
+  'safeEncodeAsync',
+  'safeParse',
+  'safeParseAsync',
+]);
 const METADATA_METHODS = new Set(['meta', 'register']);
 const CHAIN_LINKS = new Map([
   ['CallExpression', 'callee'],
@@ -47,21 +61,29 @@ const chainRoot = (node) => {
   return current.type === 'Identifier' ? current : null;
 };
 
-const methodName = ({ callee }) => {
+const callTarget = (scope, { callee }) => {
   if (callee.type === 'Identifier') {
-    return callee.name;
+    const specifier = zodImportSpecifier(scope, callee.name);
+    return { name: specifier.type === 'ImportSpecifier' ? importedName(specifier) : callee.name, isTopLevel: true };
   }
-  return callee.type === 'MemberExpression' && !callee.computed ? callee.property.name : null;
+  if (callee.type !== 'MemberExpression' || callee.computed) {
+    return { name: null, isTopLevel: false };
+  }
+  const isTopLevel = callee.object.type === 'Identifier' && zodImportSpecifier(scope, callee.object.name) !== null;
+  return { name: callee.property.name, isTopLevel };
 };
 
 const isMessageKey = ({ type, computed, key }) => type === 'Property'
   && ((key.type === 'Identifier' && !computed && key.name === 'message')
     || (key.type === 'Literal' && key.value === 'message'));
 
-const paramArguments = (node) => {
-  const name = methodName(node);
+const paramArguments = (scope, node) => {
+  const { name, isTopLevel } = callTarget(scope, node);
   if (METADATA_METHODS.has(name)) {
     return [];
+  }
+  if (isTopLevel && DATA_FUNCTIONS.has(name)) {
+    return node.arguments.slice(2);
   }
   return DATA_FIRST_METHODS.has(name) ? node.arguments.slice(1) : node.arguments;
 };
@@ -77,11 +99,12 @@ module.exports = {
   create(context) {
     return {
       CallExpression(node) {
+        const scope = context.sourceCode.getScope(node);
         const root = chainRoot(node.callee);
-        if (root === null || zodImportSpecifier(context.sourceCode.getScope(node), root.name) === null) {
+        if (root === null || zodImportSpecifier(scope, root.name) === null) {
           return;
         }
-        for (const argument of paramArguments(node)) {
+        for (const argument of paramArguments(scope, node)) {
           if (argument.type === 'ObjectExpression') {
             argument.properties.filter(isMessageKey).forEach(property => context.report({ node: property, messageId: 'messageParam' }));
           }

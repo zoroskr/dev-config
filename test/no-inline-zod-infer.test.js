@@ -28,6 +28,9 @@ for (const [name, code] of [
   ['a non-zod qualified generic', 'import type { Prisma } from \'p\';\ntype Row = Prisma.infer<typeof x>;\nconst x = 1;'],
   ['a renamed zod import aliasing a local schema', 'import { z as zod } from \'zod\';\nconst formSchema = zod.object({});\ntype FormValues = zod.infer<typeof formSchema>;'],
   ['a named infer import aliasing a local schema', 'import type { infer as Infer } from \'zod\';\nimport { z } from \'zod\';\nconst formSchema = z.object({});\ntype FormValues = Infer<typeof formSchema>;'],
+  ['a z member of a non-zod namespace', 'import type * as other from \'other\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = other.z.infer<typeof userSchemaRaw>;'],
+  ['a z member of a namespace zod import aliasing a local schema', 'import * as zod from \'zod\';\nconst formSchema = zod.z.object({});\ntype FormValues = zod.z.infer<typeof formSchema>;'],
+  ['a non-z member of a namespace zod import', 'import type * as zod from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = zod.core.infer<typeof userSchemaRaw>;'],
   ['a non-zod named infer import', 'import type { infer as Infer } from \'other\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = Infer<typeof userSchemaRaw>;'],
 ]) {
   test(`accepts ${name}`, async () => {
@@ -102,6 +105,8 @@ for (const [name, code] of [
   ['an unimported global z', 'import type { userSchemaRaw } from \'./user\';\ntype Editor = z.infer<typeof userSchemaRaw>;'],
   ['a renamed namespace import', 'import type * as zod from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = zod.infer<typeof userSchemaRaw>;'],
   ['a renamed z import', 'import type { z as zod } from \'zod\';\nimport type { importedSchema } from \'./user\';\ntype U = zod.infer<typeof importedSchema>;'],
+  ['a z member of a namespace zod import', 'import type * as zod from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = zod.z.infer<typeof userSchemaRaw>;'],
+  ['a z member of a default zod import', 'import zod from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = zod.z.input<typeof userSchemaRaw>;'],
   ['a default zod import', 'import zod from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = zod.output<typeof userSchemaRaw>;'],
   ['a zod/v4 import', 'import type { z } from \'zod/v4\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = z.infer<typeof userSchemaRaw>;'],
   ['a named infer import', 'import type { infer as Infer } from \'zod\';\nimport type { userSchemaRaw } from \'./user\';\ntype Editor = Infer<typeof userSchemaRaw>;'],

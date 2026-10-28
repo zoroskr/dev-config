@@ -40,6 +40,7 @@ const restrictedSyntax = [
     'TSTypeReference[typeName.name',
     'ImportSpecifier[imported.name',
     'TSQualifiedName[right.name',
+    'TSImportType[qualifier.name',
   ].map(attribute => ({
     selector: `${attribute}=/^inferRouter(Outputs|Inputs)$/]`,
     message: 'Import the output/input type exported beside its schema instead of `inferRouterOutputs`/`inferRouterInputs`. See skill `zod-schemas`.',

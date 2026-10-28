@@ -21,15 +21,16 @@ const literalSource = (node) => {
   return null;
 };
 
-const isProcessEnv = node => node.object.type === 'Identifier'
-  && node.object.name === 'process'
+const isMemberNamed = (node, name) => node?.type === 'MemberExpression'
   && (node.computed
-    ? node.property.type === 'Literal' && node.property.value === 'env'
-    : node.property.name === 'env');
+    ? node.property.type === 'Literal' && node.property.value === name
+    : node.property.name === name);
 
-const isEnvKey = ({ type, computed, key }) => type === 'Property'
-  && ((key.type === 'Identifier' && !computed && key.name === 'env')
-    || (key.type === 'Literal' && key.value === 'env'));
+const isKeyNamed = ({ type, computed, key }, name) => type === 'Property'
+  && ((key.type === 'Identifier' && !computed && key.name === name)
+    || (key.type === 'Literal' && key.value === name));
+
+const isEnvKey = property => isKeyNamed(property, 'env');
 
 const destructuredSource = (node) => {
   if (node.parent.type === 'VariableDeclarator' && node.parent.id === node) {
@@ -47,6 +48,13 @@ const isGlobalBinding = (scope, name) => {
   }
   return true;
 };
+
+const isGlobalIdentifier = (scope, node, name) => node?.type === 'Identifier'
+  && node.name === name
+  && isGlobalBinding(scope, name);
+
+const isProcessObject = (scope, node) => isGlobalIdentifier(scope, node, 'process')
+  || (isMemberNamed(node, 'process') && isGlobalIdentifier(scope, node.object, 'globalThis'));
 
 module.exports = {
   meta: {
@@ -93,6 +101,29 @@ module.exports = {
       }
     };
 
+    const reportEnvKeys = (pattern) => {
+      pattern.properties.filter(isEnvKey).forEach(property => context.report({ node: property, messageId: 'processEnv' }));
+    };
+
+    const checkProcessAlias = (declarator, identifier) => {
+      const variable = context.sourceCode.getDeclaredVariables(declarator).find(declared => declared.identifiers.includes(identifier));
+      for (const { identifier: use } of variable?.references ?? []) {
+        if (use.parent.type === 'MemberExpression' && use.parent.object === use && isMemberNamed(use.parent, 'env')) {
+          context.report({ node: use.parent, messageId: 'processEnv' });
+        }
+      }
+    };
+
+    const checkGlobalThisPattern = (node) => {
+      for (const property of node.properties.filter(candidate => isKeyNamed(candidate, 'process'))) {
+        if (property.value.type === 'ObjectPattern') {
+          reportEnvKeys(property.value);
+        } else if (property.value.type === 'Identifier' && node.parent.type === 'VariableDeclarator') {
+          checkProcessAlias(node.parent, property.value);
+        }
+      }
+    };
+
     return {
       ImportDeclaration: checkDeclaration,
       ExportNamedDeclaration: checkDeclaration,
@@ -101,14 +132,17 @@ module.exports = {
         checkSource(node, node.source);
       },
       MemberExpression(node) {
-        if (isProcessEnv(node) && isGlobalBinding(context.sourceCode.getScope(node), 'process')) {
+        if (isMemberNamed(node, 'env') && isProcessObject(context.sourceCode.getScope(node), node.object)) {
           context.report({ node, messageId: 'processEnv' });
         }
       },
       ObjectPattern(node) {
+        const scope = context.sourceCode.getScope(node);
         const source = destructuredSource(node);
-        if (source?.type === 'Identifier' && source.name === 'process' && isGlobalBinding(context.sourceCode.getScope(node), 'process')) {
-          node.properties.filter(isEnvKey).forEach(property => context.report({ node: property, messageId: 'processEnv' }));
+        if (isProcessObject(scope, source)) {
+          reportEnvKeys(node);
+        } else if (isGlobalIdentifier(scope, source, 'globalThis')) {
+          checkGlobalThisPattern(node);
         }
       },
       JSXElement: checkJsx,
