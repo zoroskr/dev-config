@@ -26,6 +26,7 @@ const UTIL_FOLDER = `A \`*.util.ts\` file lives below a \`utils/\` folder (\`uti
 const CONSTANTS_FOLDER = `A \`*.constants.ts\` file lives below a \`constants/\` folder (\`constants/LeadStatus/lead-status.constants.ts\`). ${SKILL}`;
 const HOOK_FOLDER = `A hook file (\`use*.ts\`, \`*.hook.ts\`) lives below a \`hooks/\` folder (\`hooks/UseLeadForm/useLeadForm.ts\`). ${SKILL}`;
 const componentsOnly = name => `Only component files (\`.tsx\` and their tests) go below \`components/\`; move \`${name}\` to the feature \`schemas/\`, \`utils/\`, \`constants/\` or \`hooks/\` folder. ${SKILL}`;
+const nestedUnit = name => `Put \`${name}\` in a unit folder directly inside its category folder; a child component gets a sibling folder in \`components/\`, never a folder inside its parent. ${SKILL}`;
 const unitFolder = (name, unit) => `Put \`${name}\` in its own \`${unit}/\` folder inside its category folder (\`components/Foo/Foo.tsx\`, \`utils/NormalizeEmail/normalize-email.util.ts\`). ${SKILL}`;
 const genericName = name => `Do not use the generic file name \`${name}\`; name the unit by its concern (\`utils/NormalizeEmail/normalize-email.util.ts\`). ${SKILL}`;
 const ZOD_TSX = `Do not build Zod schemas in a \`.tsx\` file; move the schema to the feature \`schemas/\` folder. ${SKILL}`;
@@ -111,6 +112,10 @@ const rejected = [
   ['F3', 'src/app/orders/components/Foo/format.ts', value, [componentsOnly('format.ts'), unitFolder('format.ts', 'Format')]],
   ['F3', 'src/app/orders/components/Foo.tsx', component('Foo'), [unitFolder('Foo.tsx', 'Foo')]],
   ['F3', 'src/app/orders/components/Foo/Bar.tsx', component('Bar'), [unitFolder('Bar.tsx', 'Bar')]],
+  ['F3', 'src/app/orders/components/Foo/Bar/Bar.tsx', component('Bar'), [nestedUnit('Bar.tsx')]],
+  ['F3', 'src/app/orders/components/DataTable/DataTable/DataTable.tsx', component('DataTable'), [nestedUnit('DataTable.tsx')]],
+  ['F3', 'src/app/orders/components/Foo/Bar/Bar.test.tsx', value, [nestedUnit('Bar.test.tsx')]],
+  ['F3', 'src/app/orders/utils/Group/NormalizeEmail/normalize-email.util.ts', value, [nestedUnit('normalize-email.util.ts')]],
   ['F3', 'src/app/orders/schemas/lead-form.schema.ts', value, [unitFolder('lead-form.schema.ts', 'LeadForm')]],
   ['F3', 'src/app/orders/schemas/Lead/lead-form.schema.ts', value, [unitFolder('lead-form.schema.ts', 'LeadForm')]],
   ['F3', 'src/app/orders/utils/NormalizeEmail/normalize.util.ts', value, [unitFolder('normalize.util.ts', 'Normalize')]],
@@ -184,7 +189,6 @@ const accepted = [
   ['F3', 'src/app/orders/components/Foo/Foo.tsx', component('Foo')],
   ['F3', 'src/app/orders/components/Foo/Foo.test.tsx', value],
   ['F3', 'src/app/orders/components/Foo/Foo.stories.tsx', value],
-  ['F3', 'src/app/orders/components/DataTable/DataTable/DataTable.tsx', component('DataTable')],
   ['F3', 'src/app/orders/page.tsx', page('  return null;\n')],
   ['F3', 'src/app/orders/env.d.ts', 'declare const value: string;\n'],
   ['F3', 'src/components/Foo.tsx', component('Foo')],

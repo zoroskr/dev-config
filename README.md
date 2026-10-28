@@ -157,6 +157,7 @@ Test files (`*.test`, `*.spec`, `*.stories`) and `scripts/**` are exempt, except
   - `*.schema.ts` only below `schemas/`, `*.util.ts` below `utils/`, `*.constants.ts`/`*.constant.ts` below `constants/`, hooks (`use*.ts(x)`, `*.hook.ts`) below `hooks/`.
   - Below `components/`, at any depth, only `.tsx` component files and their tests.
   - A file below a category folder (`components`, `utils`, `schemas`, `constants`, `hooks`) sits in a folder named like its unit: the PascalCase of the file name without extension, `.test`/`.spec`/`.stories` and the `.schema`/`.util`/`.constants`/`.constant`/`.hook` suffix (`components/Foo/Foo.tsx`, `utils/NormalizeEmail/normalize-email.util.ts`, `hooks/UseOrders/useOrders.ts`).
+  - The unit folder sits directly inside its category folder: a child component gets a sibling folder in `components/`, never a folder inside its parent (`components/Foo/Bar/Bar.tsx` and `components/DataTable/DataTable/DataTable.tsx` are rejected).
   - No generic names: `helpers`, `utils`, `constants`, `options`, `schema`, `types`.
 - `local/app-router-syntax` (production TypeScript):
   - `app` and `shared`: no `export * from` or `export { x } from` (type re-exports included).

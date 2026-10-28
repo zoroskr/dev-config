@@ -46,7 +46,12 @@ const placementProblems = (folders, name) => {
     problems.push({ messageId: 'genericName', data: { name } });
   }
   const expected = pascalCase(unit);
-  if (folders.some(segment => CATEGORIES.has(segment)) && expected.length > 0 && folders.at(-1) !== expected) {
+  const categoryIndex = folders.findLastIndex(segment => CATEGORIES.has(segment));
+  if (categoryIndex !== -1 && categoryIndex < folders.length - 2 && problems.length === 0) {
+    problems.push({ messageId: 'nestedUnit', data: { name } });
+    return problems;
+  }
+  if (categoryIndex !== -1 && expected.length > 0 && folders.at(-1) !== expected) {
     problems.push({ messageId: 'unitFolder', data: { name, unit: expected } });
   }
   return problems;
@@ -67,6 +72,7 @@ module.exports = {
       constantsFolder: 'A `*.constants.ts` file lives below a `constants/` folder (`constants/LeadStatus/lead-status.constants.ts`). See skill `nextjs-app-router`.',
       hookFolder: 'A hook file (`use*.ts`, `*.hook.ts`) lives below a `hooks/` folder (`hooks/UseLeadForm/useLeadForm.ts`). See skill `nextjs-app-router`.',
       componentsOnly: 'Only component files (`.tsx` and their tests) go below `components/`; move `{{name}}` to the feature `schemas/`, `utils/`, `constants/` or `hooks/` folder. See skill `nextjs-app-router`.',
+      nestedUnit: 'Put `{{name}}` in a unit folder directly inside its category folder; a child component gets a sibling folder in `components/`, never a folder inside its parent. See skill `nextjs-app-router`.',
       unitFolder: 'Put `{{name}}` in its own `{{unit}}/` folder inside its category folder (`components/Foo/Foo.tsx`, `utils/NormalizeEmail/normalize-email.util.ts`). See skill `nextjs-app-router`.',
       genericName: 'Do not use the generic file name `{{name}}`; name the unit by its concern (`utils/NormalizeEmail/normalize-email.util.ts`). See skill `nextjs-app-router`.',
     },
