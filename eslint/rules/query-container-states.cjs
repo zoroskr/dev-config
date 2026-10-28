@@ -1,5 +1,5 @@
 const { findVariable, isKeyNamed } = require('./process-env.cjs');
-const { STATE_QUERY, isHookCall, unwrap } = require('./query-hooks.cjs');
+const { STATE_QUERY, TS_WRAPPERS, isHookCall, unwrap } = require('./query-hooks.cjs');
 
 const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression']);
 const SKELETON = /Skeleton$/u;
@@ -17,7 +17,8 @@ const isOr = node => node.type === 'LogicalExpression' && node.operator === '||'
 
 const guardRoot = (node) => {
   const { parent } = node;
-  const wraps = parent.type === 'LogicalExpression' || (parent.type === 'UnaryExpression' && parent.operator === '!');
+  const wraps = parent.type === 'LogicalExpression' || TS_WRAPPERS.has(parent.type)
+    || (parent.type === 'UnaryExpression' && parent.operator === '!');
   return wraps ? guardRoot(parent) : node;
 };
 
@@ -93,9 +94,9 @@ module.exports = {
         const pending = localName(declarator.id, 'isPending');
         const error = localName(declarator.id, 'isError');
         const branches = owner.body.body.filter(statement => statement.type === 'IfStatement');
-        const pendingIf = branches.find(({ test }) => leaves(test).some(leaf => isNamed(leaf, pending))
-          && (test.type !== 'LogicalExpression' || test.operator === '||'));
-        const errorIf = branches.find(({ test }) => isNamed(test, error));
+        const pendingIf = branches.find(({ test }) => leaves(unwrap(test)).some(leaf => isNamed(leaf, pending))
+          && (unwrap(test).type !== 'LogicalExpression' || unwrap(test).operator === '||'));
+        const errorIf = branches.find(({ test }) => isNamed(unwrap(test), error));
         if (pendingIf === undefined) {
           context.report({ node: declarator, messageId: 'missingPending' });
         } else if (!SKELETON.test(returnedElement(pendingIf.consequent) ?? '')) {

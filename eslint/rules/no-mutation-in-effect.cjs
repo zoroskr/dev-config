@@ -60,6 +60,25 @@ const isTrigger = (sourceCode, callee) => {
   return TRIGGERS.some(name => isMemberNamed(callee, name)) && isMutationObject(sourceCode, unwrap(callee.object));
 };
 
+const isEffectArgument = (sourceCode, node) => {
+  const effect = wrapperParent(node);
+  return effect.type === 'CallExpression' && unwrap(effect.arguments[0]) === node && isEffectCallee(sourceCode, effect.callee);
+};
+
+const callbackVariable = (sourceCode, owner) => {
+  if (owner.type === 'FunctionDeclaration') {
+    return owner.id === null ? undefined : sourceCode.getDeclaredVariables(owner).find(variable => variable.name === owner.id.name);
+  }
+  const declarator = wrapperParent(owner);
+  if (declarator.type !== 'VariableDeclarator' || declarator.parent.kind !== 'const' || declarator.id.type !== 'Identifier') {
+    return undefined;
+  }
+  return sourceCode.getDeclaredVariables(declarator)[0];
+};
+
+const isEffectCallback = (sourceCode, owner) => isEffectArgument(sourceCode, owner)
+  || (callbackVariable(sourceCode, owner)?.references ?? []).some(reference => isEffectArgument(sourceCode, reference.identifier));
+
 module.exports = {
   meta: {
     type: 'problem',
@@ -76,8 +95,7 @@ module.exports = {
           return;
         }
         const owner = sourceCode.getAncestors(node).findLast(ancestor => FUNCTIONS.has(ancestor.type));
-        const effect = owner === undefined ? null : wrapperParent(owner);
-        if (effect?.type === 'CallExpression' && unwrap(effect.arguments[0]) === owner && isEffectCallee(sourceCode, effect.callee)) {
+        if (owner !== undefined && isEffectCallback(sourceCode, owner)) {
           context.report({ node, messageId: 'effect' });
         }
       },

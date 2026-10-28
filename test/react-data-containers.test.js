@@ -44,6 +44,7 @@ const withProps = jsx => container(queryLine, pendingBranch, errorBranch, `  ret
 const reactImport = 'import { useEffect } from \'react\';\n\n';
 const effect = (setup, body) => `${reactImport}export function Seen({ id }: { id: string }) {\n${setup}  useEffect(() => {\n${body}  }, [id]);\n  return null;\n}\n`;
 const mutationLine = '  const { mutate } = api.items.seen.useMutation();\n';
+const namedEffect = (callback, call = 'useEffect(onMount, [mutate]);') => `${reactImport}export function Seen() {\n${mutationLine}${callback}  ${call}\n  return null;\n}\n`;
 
 const rejected = [
   ['src/items/Items.tsx', 'export function Items() {\n  const { data } = api.items.list.useQuery();\n  return data;\n}\n', [PLACEMENT]],
@@ -109,6 +110,19 @@ const rejected = [
   ['src/hooks/use-filters.ts', 'export function useFilters() {\n  return 1;\n}\n', [FILTERS], {}],
   ['src/items/use-item-filters.ts', 'export const useItemFilters = (() => 1) satisfies () => number;\n', [FILTERS], {}],
   ['src/items/use-item-filters.ts', 'export const useItemFilters = (function () {\n  return 1;\n}) as Hook;\n', [FILTERS], {}],
+  ['src/items/use-items.ts', 'export const useItems = function readItems() {\n  return api.items.list.useQuery();\n};\n', [WRAPPER]],
+  ['src/items/items.ts', 'export const items = function useItems() {\n  return api.items.list.useQuery();\n};\n', [PLACEMENT]],
+  ['src/items/hooks.ts', 'export const hooks = {\n  useItems: function readItems() {\n    return api.items.list.useQuery();\n  },\n};\n', [WRAPPER]],
+  [containerFile, container(queryLine, '  if ((isPending || data == null) satisfies boolean) {\n    return <ItemsSkeleton />;\n  }\n', errorBranch, render), [PENDING_OR]],
+  [containerFile, container(queryLine, '  if (!(isPending || data == null)!) {\n    return <ItemsSkeleton />;\n  }\n', pendingBranch, errorBranch, render), [PENDING_OR]],
+  [containerFile, withProps('(isPending || isRefetching) as boolean ? <ItemsSkeleton /> : <Items items={data.items} />'), [PENDING_OR]],
+  [containerFile, withProps('<Items config={(track(), { x: 1 })} />'), [INLINE_PROPS]],
+  [containerFile, withProps('<Items config={isRefetching ? (track(), { x: 1 }) : undefined} />'), [INLINE_PROPS]],
+  ['src/hooks/hooks.ts', 'export const Hooks = {\n  useFilters() {\n    return 1;\n  },\n};\n', [FILTERS], {}],
+  ['src/hooks/hooks.ts', 'export const Hooks = {\n  useItemFilters: () => 1,\n  \'useUserFilters\': (function () {\n    return 1;\n  }) satisfies Hook,\n};\n', [FILTERS, FILTERS], {}],
+  ['src/items/Seen.tsx', namedEffect('  const onMount = () => {\n    mutate();\n  };\n'), [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', namedEffect('  const onMount = function () {\n    mutate();\n  };\n', 'useLayoutEffect(onMount as Effect, [mutate]);').replace('{ useEffect }', '{ useLayoutEffect }'), [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', namedEffect('  function onMount() {\n    mutate();\n  }\n'), [EFFECT_MUTATION]],
 ];
 
 for (const [file, code, messages, options] of rejected) {
@@ -169,6 +183,15 @@ const accepted = [
   [containerFile, withProps('<div data-items={{ a: 1 } as const}><Items items={data.items} /></div>')],
   [containerFile, withProps('<Items {...{ items: data.items }} />')],
   [containerFile, withProps('<Items {...{ style: { color: \'red\' } }} items={data.items} />')],
+  [containerFile, container(queryLine, pendingBranch, errorBranch, '  const busy = (isPending || isRefetching) satisfies boolean;\n', '  return <Items items={data.items} busy={busy} />;\n')],
+  [containerFile, withProps('<Items config={(track(), undefined)} />')],
+  [containerFile, container(queryLine, pendingBranch, '  if (isError satisfies boolean) {\n    return <Error error={error.message} onRetry={() => void refetch()} isRefetching={isRefetching} />;\n  }\n', render)],
+  ['src/hooks/hooks.ts', 'export const Hooks = {\n  useSearchFilter() {\n    return 1;\n  },\n  useFilters: 1,\n  [useFilters]: () => 1,\n};\n', {}],
+  ['src/items/Seen.tsx', namedEffect('  const onMount = () => {\n    const onFocus = () => mutate();\n    window.addEventListener(\'focus\', onFocus);\n    return () => window.removeEventListener(\'focus\', onFocus);\n  };\n')],
+  ['src/items/Seen.tsx', namedEffect('  const onMount = () => {\n    const timer = setTimeout(() => mutate(), 100);\n    return () => clearTimeout(timer);\n  };\n')],
+  ['src/items/Seen.tsx', namedEffect('  let onMount = () => {\n    mutate();\n  };\n')],
+  ['src/items/Seen.tsx', namedEffect('  const onMount = () => {\n    mutate();\n  };\n', 'return <button onClick={onMount} />;').replace('\n  return null;', '')],
+  ['src/items/Seen.tsx', `import { mutate } from 'swr';\n${namedEffect('  const onMount = () => {\n    void mutate(\'items\');\n  };\n').replace(mutationLine, '')}`],
 ];
 
 for (const [file, code, options] of accepted) {

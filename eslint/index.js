@@ -30,9 +30,10 @@ const securityWarnings = Object.fromEntries(
   Object.keys(security.configs.recommended.rules).map(rule => [rule, 'warn']),
 );
 
-const filtersHook = '[id.name=/^use(?:[A-Z]\\w*)?Filters$/]';
-const functionInits = ['init', 'init.expression', 'init.expression.expression']
-  .map(path => `[${path}.type=/^(ArrowFunctionExpression|FunctionExpression)$/]`);
+const filtersName = '/^use(?:[A-Z]\\w*)?Filters$/';
+const functionValues = base => [base, `${base}.expression`, `${base}.expression.expression`]
+  .map(path => `[${path}.type=/^(ArrowFunctionExpression|FunctionExpression)$/]`)
+  .join(', ');
 
 const restrictedSyntax = [
   {
@@ -69,8 +70,9 @@ const restrictedSyntax = [
     message: 'Use an `as const` array or `z.enum`, not a TS enum; derive the type with `(typeof VALUES)[number]`. See skill `zod-schemas`.',
   },
   ...[
-    `FunctionDeclaration${filtersHook}`,
-    `VariableDeclarator${filtersHook}:matches(${functionInits.join(', ')})`,
+    `FunctionDeclaration[id.name=${filtersName}]`,
+    `VariableDeclarator[id.name=${filtersName}]:matches(${functionValues('init')})`,
+    `Property[computed=false]:matches([key.name=${filtersName}], [key.value=${filtersName}]):matches(${functionValues('value')})`,
   ].map(selector => ({
     selector,
     message: 'Do not declare a plural `use*Filters` hook; compose the single-purpose URL filter hooks in the Container. See skill `react-data-containers`.',

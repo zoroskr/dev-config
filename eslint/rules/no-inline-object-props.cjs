@@ -13,6 +13,9 @@ const branches = (expression) => {
   if (node.type === 'LogicalExpression') {
     return [...branches(node.left), ...branches(node.right)];
   }
+  if (node.type === 'SequenceExpression') {
+    return branches(node.expressions.at(-1));
+  }
   return [node];
 };
 

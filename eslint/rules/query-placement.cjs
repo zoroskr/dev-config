@@ -13,14 +13,14 @@ const keyName = ({ computed, key }) => {
 };
 
 const functionName = (node) => {
-  if (node.id) {
-    return node.id.name;
-  }
   const parent = wrapperParent(node);
-  if (parent.type === 'VariableDeclarator') {
-    return parent.id.type === 'Identifier' ? parent.id.name : null;
+  if (parent.type === 'VariableDeclarator' && parent.id.type === 'Identifier') {
+    return parent.id.name;
   }
-  return parent.type === 'Property' ? keyName(parent) : null;
+  if (parent.type === 'Property') {
+    return keyName(parent);
+  }
+  return node.id?.name ?? null;
 };
 
 const insideHook = (sourceCode, node) => sourceCode.getAncestors(node)
