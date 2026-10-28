@@ -27,7 +27,7 @@ const CONSTANTS_FOLDER = `A \`*.constants.ts\` file lives below a \`constants/\`
 const HOOK_FOLDER = `A hook file (\`use*.ts\`, \`*.hook.ts\`) lives below a \`hooks/\` folder (\`hooks/UseLeadForm/useLeadForm.ts\`). ${SKILL}`;
 const componentsOnly = name => `Only component files (\`.tsx\` and their tests) go below \`components/\`; move \`${name}\` to the feature \`schemas/\`, \`utils/\`, \`constants/\` or \`hooks/\` folder. ${SKILL}`;
 const unitFolder = (name, unit) => `Put \`${name}\` in its own \`${unit}/\` folder inside its category folder (\`components/Foo/Foo.tsx\`, \`utils/NormalizeEmail/normalize-email.util.ts\`). ${SKILL}`;
-const genericName = name => `Do not use the generic file name \`${name}\`; name the unit (\`<feature>.<concern>.util.ts\`). ${SKILL}`;
+const genericName = name => `Do not use the generic file name \`${name}\`; name the unit by its concern (\`utils/NormalizeEmail/normalize-email.util.ts\`). ${SKILL}`;
 const ZOD_TSX = `Do not build Zod schemas in a \`.tsx\` file; move the schema to the feature \`schemas/\` folder. ${SKILL}`;
 const SCHEMA_TSX = `Do not declare a \`*Schema\` const in a \`.tsx\` file; move it to the feature \`schemas/\` folder. ${SKILL}`;
 const STATIC_REDIRECT = `A page that only calls \`redirect()\` with a static path belongs in \`next.config\` \`redirects()\`; delete the page. ${SKILL}`;

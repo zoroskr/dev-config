@@ -68,7 +68,7 @@ module.exports = {
       hookFolder: 'A hook file (`use*.ts`, `*.hook.ts`) lives below a `hooks/` folder (`hooks/UseLeadForm/useLeadForm.ts`). See skill `nextjs-app-router`.',
       componentsOnly: 'Only component files (`.tsx` and their tests) go below `components/`; move `{{name}}` to the feature `schemas/`, `utils/`, `constants/` or `hooks/` folder. See skill `nextjs-app-router`.',
       unitFolder: 'Put `{{name}}` in its own `{{unit}}/` folder inside its category folder (`components/Foo/Foo.tsx`, `utils/NormalizeEmail/normalize-email.util.ts`). See skill `nextjs-app-router`.',
-      genericName: 'Do not use the generic file name `{{name}}`; name the unit (`<feature>.<concern>.util.ts`). See skill `nextjs-app-router`.',
+      genericName: 'Do not use the generic file name `{{name}}`; name the unit by its concern (`utils/NormalizeEmail/normalize-email.util.ts`). See skill `nextjs-app-router`.',
     },
   },
   create(context) {
