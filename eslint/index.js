@@ -19,6 +19,7 @@ import queryContainerStates from './rules/query-container-states.cjs';
 import queryHookDestructuring from './rules/query-hook-destructuring.cjs';
 import queryPlacement from './rules/query-placement.cjs';
 import requireProcedureOutput from './rules/require-procedure-output.cjs';
+import rhfFormContract from './rules/rhf-form-contract.cjs';
 import routeColocation from './rules/route-colocation.cjs';
 import routeGlobalScope from './rules/route-global-scope.cjs';
 import routeLoading from './rules/route-loading.cjs';
@@ -344,6 +345,32 @@ function appRouterConfigs(appRouter) {
   ];
 }
 
+const formsDefaults = {
+  files: ['**/*.tsx'],
+  schemaFiles: ['**/app/**/schemas/**/*.ts', '**/app/**/*.schema.ts'],
+};
+
+function formsConfigs(forms) {
+  if (!forms) {
+    return [];
+  }
+  const { files, schemaFiles } = { ...formsDefaults, ...(typeof forms === 'object' ? forms : {}) };
+  return [
+    {
+      name: 'zoroskr/forms/contract',
+      files: [...files, ...schemaFiles],
+      ignores: productionIgnores,
+      rules: { 'local/rhf-form-contract': ['error', { schemaFiles }] },
+    },
+    {
+      name: 'zoroskr/forms/schemas',
+      files: schemaFiles,
+      ignores: productionIgnores,
+      rules: { 'local/no-schema-default': ['error', { form: true }] },
+    },
+  ];
+}
+
 const typeScriptRules = {
   'ts/ban-ts-comment': 'error',
   'ts/consistent-type-definitions': ['error', 'type'],
@@ -454,6 +481,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     layeredBackend = false,
     isomorphic = false,
     appRouter = false,
+    forms = false,
     inferredReturnTypes = true,
     envFiles,
     typescript = {},
@@ -503,6 +531,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'query-hook-destructuring': queryHookDestructuring,
             'query-placement': queryPlacement,
             'require-procedure-output': requireProcedureOutput,
+            'rhf-form-contract': rhfFormContract,
             'route-colocation': routeColocation,
             'route-global-scope': routeGlobalScope,
             'route-loading': routeLoading,
@@ -584,6 +613,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     ...layeredBackendConfigs(layeredBackend, productionRestrictedSyntax),
     ...isomorphicConfigs(isomorphic),
     ...appRouterConfigs(appRouter),
+    ...formsConfigs(forms),
     ...queryConfigs(query, productionRestrictedSyntax),
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),

@@ -1,0 +1,161 @@
+import assert from 'node:assert/strict';
+import { dirname, join } from 'node:path';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { ESLint } from 'eslint';
+import zoroskr from '../eslint/index.js';
+
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const app = join(root, 'test/fixtures/app');
+const formRules = new Set(['local/rhf-form-contract', 'local/no-schema-default']);
+const forms = { forms: true };
+
+const INLINE_DEFAULTS = 'Do not write literal `defaultValues` inline in `useForm`; export a `<form>FormDefaults` object from the schema file, `satisfies` its type. See skill `rhf-zod-forms`.';
+const DEFAULTS_SATISFIES = 'Type a `*FormDefaults` object with `satisfies` against its form type: `export const xFormDefaults = { … } satisfies XForm;`. See skill `rhf-zod-forms`.';
+const RESOLVER = 'Validate `useForm` with `resolver: zodResolver(formSchema)` from `@hookform/resolvers/zod`. See skill `rhf-zod-forms`.';
+const REGISTER = 'Use the controlled form components (`Controller`) instead of `register`. See skill `rhf-zod-forms`.';
+const SUBMIT_GATE = 'Never gate submit on validity or empty strings; let the resolver show errors; disable only while `isPending`. See skill `rhf-zod-forms`.';
+const MUTATE_ASYNC = 'Await `mutateAsync` inside `try`/`catch` and show error feedback. See skill `rhf-zod-forms`.';
+const FORM_DEFAULT = 'Form fields never use `.default()` or `.prefault()`; set initial values in the defaults object. See skill `rhf-zod-forms`.';
+
+async function lintWith(file, code, options) {
+  const eslint = new ESLint({ cwd: app, overrideConfigFile: true, overrideConfig: await zoroskr(options) });
+  const [result] = await eslint.lintText(code, { filePath: join(app, file) });
+  assert.equal(result.messages.some(message => message.fatal), false, JSON.stringify(result.messages));
+  return result.messages.filter(message => message.severity === 2);
+}
+
+async function lint(file, code, options = forms) {
+  return (await lintWith(file, code, options)).filter(message => formRules.has(message.ruleId));
+}
+
+const formFile = 'src/app/leads/components/LeadForm/LeadForm.tsx';
+const schemaFile = 'src/app/leads/schemas/LeadForm/lead-form.schema.ts';
+const imports = 'import { zodResolver } from \'@hookform/resolvers/zod\';\nimport { useForm } from \'react-hook-form\';\n\n';
+const resolver = 'resolver: zodResolver(leadFormSchema)';
+const component = body => `${imports}export function LeadForm() {\n${body}  return null;\n}\n`;
+const useFormWith = options => component(`  const form = useForm({ ${options} });\n  void form;\n`);
+const mutation = '  const { mutateAsync } = api.leads.create.useMutation();\n';
+const submit = body => component(`${mutation}  const onSubmit = async (values: LeadForm) => {\n${body}  };\n  void onSubmit;\n`);
+const zodImport = 'import { z } from \'zod\';\n\n';
+
+const rejected = [
+  [formFile, useFormWith(`${resolver}, defaultValues: { name: '' }`), [INLINE_DEFAULTS]],
+  [formFile, useFormWith(`${resolver}, defaultValues: { count: 0, active: false, note: null, tags: [], meta: {}, title: \`x\` }`), [INLINE_DEFAULTS]],
+  [formFile, useFormWith(`${resolver}, defaultValues: { name: lead.name, phone: '' }`), [INLINE_DEFAULTS]],
+  [formFile, useFormWith(`${resolver}, defaultValues: { ...leadFormDefaults, name: '' } satisfies LeadForm`), [INLINE_DEFAULTS]],
+  [formFile, `import { useForm as useRhf } from 'react-hook-form';\nimport { zodResolver } from '@hookform/resolvers/zod';\n\nexport function LeadForm() {\n  const form = useRhf({ resolver: zodResolver(s), defaultValues: { name: '' } });\n  return form;\n}\n`, [INLINE_DEFAULTS]],
+  [schemaFile, `${zodImport}export const leadFormDefaults = { name: '' };\n`, [DEFAULTS_SATISFIES]],
+  [schemaFile, `${zodImport}export const leadFormDefaults: LeadForm = { name: '' };\n`, [DEFAULTS_SATISFIES]],
+  [schemaFile, `${zodImport}export const leadFormDefaults = { name: '' } as LeadForm;\n`, [DEFAULTS_SATISFIES]],
+  [formFile, useFormWith('defaultValues: leadFormDefaults'), [RESOLVER]],
+  [formFile, component('  const form = useForm();\n  void form;\n'), [RESOLVER]],
+  [formFile, useFormWith('resolver: yupResolver(schema), defaultValues: leadFormDefaults'), [RESOLVER]],
+  [formFile, `import { zodResolver } from './resolvers';\nimport { useForm } from 'react-hook-form';\n\nexport function LeadForm() {\n  return useForm({ resolver: zodResolver(s) });\n}\n`, [RESOLVER]],
+  [formFile, `import * as Rhf from 'react-hook-form';\n\nexport function LeadForm() {\n  return Rhf.useForm({ defaultValues: leadFormDefaults });\n}\n`, [RESOLVER]],
+  [formFile, component(`  const { register } = useForm({ ${resolver} });\n  void register;\n`), [REGISTER]],
+  [formFile, component(`  const { register: field } = useForm({ ${resolver} });\n  void field;\n`), [REGISTER]],
+  [formFile, `import { useFormContext } from 'react-hook-form';\n\nexport function NameField() {\n  const { register } = useFormContext();\n  return <input {...register('name')} />;\n}\n`, [REGISTER]],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  void form.register('name');\n`), [REGISTER]],
+  [formFile, component(`  const { control } = useForm({ ${resolver} });\n  void control.register('name');\n`), [REGISTER]],
+  [formFile, component(`  const { control: c } = useForm({ ${resolver} });\n  void c.register('name');\n`), [REGISTER]],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  void form.control.register('name');\n`), [REGISTER]],
+  [formFile, `import { useFormContext } from 'react-hook-form';\n\nexport function NameField() {\n  const methods = useFormContext();\n  return <input {...methods.register('name')} />;\n}\n`, [REGISTER]],
+  [formFile, component(`  const { formState: { isValid } } = useForm({ ${resolver} });\n  void isValid;\n`), [SUBMIT_GATE]],
+  [formFile, component(`  const { formState } = useForm({ ${resolver} });\n  void formState.isValid;\n`), [SUBMIT_GATE]],
+  [formFile, component(`  const form = useForm({ ${resolver} });\n  void form.formState.isValid;\n`), [SUBMIT_GATE]],
+  [formFile, component(`  const { formState } = useForm({ ${resolver} });\n  const { isValid: valid } = formState;\n  void valid;\n`), [SUBMIT_GATE]],
+  [formFile, useFormWith(`${resolver}, mode: 'onChange'`), [SUBMIT_GATE]],
+  [formFile, useFormWith(`${resolver}, mode: 'all'`), [SUBMIT_GATE]],
+  [formFile, `${imports}export function Save({ name }: Props) {\n  return <button type="submit" disabled={name === ''} />;\n}\n`, [SUBMIT_GATE]],
+  [formFile, `${imports}export function Save({ name, isPending }: Props) {\n  return <button type="submit" disabled={isPending || '' == name.trim()} />;\n}\n`, [SUBMIT_GATE]],
+  [formFile, `${imports}export function Save({ name }: Props) {\n  return <button type="submit" disabled={!(name !== '')} />;\n}\n`, [SUBMIT_GATE]],
+  [formFile, `${imports}export function Save({ rows }: Props) {\n  return <button type="submit" disabled={rows.some(row => row.name === \`\`)} />;\n}\n`, [SUBMIT_GATE]],
+  [schemaFile, `${zodImport}export const leadFormSchema = z.object({ name: z.string().default('') });\n`, [FORM_DEFAULT]],
+  [schemaFile, `${zodImport}export const leadFormSchema = z.object({ tags: z.array(z.string()).prefault([]) });\n`, [FORM_DEFAULT]],
+  [schemaFile, `${zodImport}export const createLeadInputSchema = z.object({ limit: z.number().default(20) });\n`, [FORM_DEFAULT]],
+  ['src/app/leads/lead-form.schema.ts', `${zodImport}export const leadFormSchema = z.object({ name: z.string().default('') });\n`, [FORM_DEFAULT]],
+  [formFile, submit('    await mutateAsync(values);\n'), [MUTATE_ASYNC]],
+  [formFile, component('  const { mutateAsync: create } = api.leads.create.useMutation();\n  const onSubmit = async () => {\n    await create();\n  };\n  void onSubmit;\n'), [MUTATE_ASYNC]],
+  [formFile, component('  const create = api.leads.create.useMutation();\n  async function onSubmit() {\n    await create.mutateAsync();\n  }\n  void onSubmit;\n'), [MUTATE_ASYNC]],
+  [formFile, submit('    try {\n      notify();\n    } catch {\n      fail();\n    }\n    await mutateAsync(values);\n'), [MUTATE_ASYNC]],
+  [formFile, submit('    try {\n      await mutateAsync(values);\n    } finally {\n      done();\n    }\n'), [MUTATE_ASYNC]],
+  [formFile, submit('    try {\n      notify();\n    } catch {\n      await mutateAsync(values);\n    }\n'), [MUTATE_ASYNC]],
+  [formFile, submit('    try {\n      run(async () => {\n        await mutateAsync(values);\n      });\n    } catch {\n      fail();\n    }\n'), [MUTATE_ASYNC]],
+  [formFile, `${imports}import { useMutation as useSave } from '@tanstack/react-query';\n\nexport function LeadForm() {\n  const { mutateAsync: save } = useSave(options);\n  const onSubmit = async () => {\n    await save();\n  };\n  return onSubmit;\n}\n`, [MUTATE_ASYNC]],
+];
+
+for (const [file, code, messages, options] of rejected) {
+  test(`${file} rejects ${JSON.stringify(code)}`, async () => {
+    const reported = await lint(file, code, options);
+    assert.deepEqual(reported.map(message => message.message), messages, JSON.stringify(reported));
+  });
+}
+
+const accepted = [
+  [formFile, useFormWith(`${resolver}, defaultValues: leadFormDefaults`)],
+  [formFile, useFormWith(`${resolver}, defaultValues: { name: lead.name, phone: lead.phone ?? undefined, tags: lead.tags.map(String), ...leadFormDefaults }`)],
+  [formFile, useFormWith(`${resolver}, defaultValues: { ...leadFormDefaults, ...remote }`)],
+  [formFile, component('  const form = useForm(formOptions);\n  void form;\n')],
+  [formFile, component('  const form = useForm({ ...formOptions });\n  void form;\n')],
+  [formFile, `import { zodResolver as zr } from '@hookform/resolvers/zod';\nimport { useForm } from 'react-hook-form';\n\nexport function LeadForm() {\n  return useForm({ resolver: zr(leadFormSchema), defaultValues: leadFormDefaults });\n}\n`],
+  [formFile, useFormWith(`${resolver}, mode: 'onSubmit'`)],
+  [formFile, useFormWith(`${resolver}, shouldUnregister: true`)],
+  [formFile, 'import { useForm } from \'./forms\';\n\nexport function LeadForm() {\n  const { register } = useForm({ defaultValues: { name: \'\' }, mode: \'onChange\' });\n  return register;\n}\n'],
+  ['src/app/leads/lead.schema.ts', 'import * as z from \'zod\';\n\nexport const leadSchema = z.object({ name: z.string() }).register(z.globalRegistry, { id: \'lead\' });\n'],
+  [formFile, 'export function Worker() {\n  return navigator.serviceWorker.register(\'/sw.js\');\n}\n'],
+  [formFile, component(`  const { control, handleSubmit } = useForm({ ${resolver} });\n  return <Controller control={control} name="name" render={() => handleSubmit} />;\n`).replace('  return null;\n', '')],
+  [formFile, component(`  const { formState: { errors, isSubmitting } } = useForm({ ${resolver} });\n  void errors;\n  void isSubmitting;\n`)],
+  [formFile, 'export function Save({ isPending }: Props) {\n  return <button type="submit" disabled={isPending}>Save</button>;\n}\n'],
+  ['src/app/chat/components/SendBox/SendBox.tsx', 'export function SendBox({ text }: Props) {\n  return <button type="button" disabled={text.trim() === \'\'} />;\n}\n'],
+  ['src/app/chat/components/AssistantDock/AssistantDock.tsx', 'export function AssistantDock() {\n  const { mutateAsync: ask } = api.ai.ask.useMutation();\n  const send = async () => {\n    await ask();\n  };\n  return send;\n}\n'],
+  [formFile, 'export function Save({ count }: Props) {\n  return <button type="submit" disabled={count === 0} />;\n}\n'],
+  [formFile, 'export function Save({ status }: Props) {\n  return <button type="submit" className={status === \'\' ? \'a\' : \'b\'} />;\n}\n'],
+  [formFile, 'export function Save({ state }: Props) {\n  return <button type="submit" disabled={state.isValid} />;\n}\n'],
+  ['src/shared/leads/schemas/lead.schema.ts', `${zodImport}export const listLeadsInputSchema = z.object({ limit: z.number().default(20) });\n`, { forms: true, isomorphic: true }],
+  [schemaFile, `${zodImport}export const leadFormSchema = z.object({ name: z.string().min(1) });\n\nexport const leadFormDefaults = { name: '' } satisfies LeadForm;\n`],
+  [schemaFile, `${zodImport}export const leadFormDefaults = { name: '' } as const satisfies LeadForm;\n`],
+  [schemaFile, `${zodImport}export const leadDefaults = { name: '' };\n`],
+  [formFile, submit('    try {\n      await mutateAsync(values);\n      reset();\n    } catch (error) {\n      notify(error instanceof Error ? error.message : t(\'unknownError\'));\n    }\n')],
+  [formFile, submit('    try {\n      if (values.ok) {\n        await mutateAsync(values);\n      }\n    } catch {\n      fail();\n    } finally {\n      done();\n    }\n')],
+  [formFile, component('  const { mutate } = api.leads.create.useMutation();\n  const onSubmit = (values: LeadForm) => {\n    mutate(values);\n  };\n  void onSubmit;\n')],
+  [formFile, component('  const { mutateAsync } = useSWRMutation(key);\n  const onSubmit = async () => {\n    await mutateAsync();\n  };\n  void onSubmit;\n')],
+  [formFile.replace('.tsx', '.test.tsx'), `${submit('    await mutateAsync(values);\n')}`],
+  ['src/app/leads/schemas/LeadForm/lead-form.schema.test.ts', `${zodImport}export const leadFormSchema = z.object({ name: z.string().default('') });\n`],
+];
+
+for (const [file, code, options] of accepted) {
+  test(`${file} accepts ${JSON.stringify(code)}${options ? ` with ${JSON.stringify(options)}` : ''}`, async () => {
+    assert.deepEqual(await lint(file, code, options), []);
+  });
+}
+
+test('forms is off by default', async () => {
+  const names = (await zoroskr()).map(config => config.name ?? '');
+  assert.equal(names.some(name => name.startsWith('zoroskr/forms')), false);
+  for (const [file, code] of rejected) {
+    assert.deepEqual(await lint(file, code, {}), [], code);
+  }
+});
+
+test('forms accepts glob overrides and keeps the other defaults', async () => {
+  const options = { forms: { files: ['**/*Form.tsx'] } };
+  const code = useFormWith('defaultValues: leadFormDefaults');
+  assert.equal((await lint(formFile, code, options)).length, 1);
+  assert.deepEqual(await lint('src/app/leads/components/Lead/Lead.tsx', code, options), []);
+  assert.equal((await lint(schemaFile, `${zodImport}export const leadFormSchema = z.string().default('');\n`, options)).length, 1);
+});
+
+test('the isomorphic rule keeps the input-schema exemption beside forms', async () => {
+  const code = `${zodImport}export const listLeadsInputSchema = z.object({ limit: z.number().default(20) });\n`;
+  const options = { forms: { schemaFiles: ['**/schemas/**/*.ts'] }, isomorphic: true };
+  assert.equal((await lint('src/app/leads/schemas/LeadForm/lead-form.schema.ts', code, options)).length, 1);
+  assert.deepEqual(await lint('src/shared/leads/lead.schema.ts', code, options), []);
+});
+
+test('the forms rules join the package selectors', async () => {
+  const code = useFormWith('defaultValues: leadFormDefaults as LeadForm');
+  const rules = (await lintWith(formFile, code, forms)).map(message => message.ruleId);
+  assert.ok(rules.includes('local/rhf-form-contract'), JSON.stringify(rules));
+  assert.ok(rules.includes('no-restricted-syntax'), JSON.stringify(rules));
+});

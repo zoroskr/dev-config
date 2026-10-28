@@ -44,6 +44,7 @@ The first argument takes these options; any other key is passed to `antfu()` (`n
 | `layeredBackend`      | `false`  | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs              |
 | `isomorphic`          | `false`  | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`                     |
 | `appRouter`           | `false`  | Next.js App Router structure rules; pass `{ app, shared, gateCallees, serverCallerModules }`                         |
+| `forms`               | `false`  | React Hook Form + Zod form rules; pass `{ files, schemaFiles }`                                                      |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
 
@@ -173,6 +174,30 @@ Test files (`*.test`, `*.spec`, `*.stories`) and `scripts/**` are exempt, except
 - `local/route-colocation` (`app`): `<dir>` has a child route when a direct child route folder (not a group, private folder, slot or category folder) holds a page at any depth through segments, groups and `[param]` folders (`details/(index)/page.tsx`, `settings/billing/page.tsx`), or a direct `(group)` child other than `(index)` and `(global)` holds a page at any depth (`(lists)/active/page.tsx`). Rejected: a file below `<dir>/components/` when `<dir>` is not a route group and has a direct child folder with a `page.ts(x)` or a child route; a `<dir>/page.ts(x)` when `<dir>` is a static segment (not `[param]`, `(group)`, `_private` or `@slot`) with a child route; move it to `<dir>/(index)/page.tsx`. `[param]/page.tsx` stays.
 
 The filesystem rules cache directory and file reads for two seconds, so one lint run reads each folder once. The rules are local rules, not `no-restricted-syntax` blocks, so the package, production, `restrictedSyntax`, layer and container selectors keep firing on app files.
+
+### With `forms`
+
+Skill `rhf-zod-forms`. Pass `true` for the defaults or an object to override any key:
+
+```js
+export default zoroskr({ forms: { files: ['**/*Form.tsx', '**/FormSections/**/*.tsx'] } });
+```
+
+| Key           | Default                                                  | Use                                                        |
+| ------------- | -------------------------------------------------------- | ---------------------------------------------------------- |
+| `files`       | `['**/*.tsx']`                                           | Files checked by `local/rhf-form-contract`                 |
+| `schemaFiles` | `['**/app/**/schemas/**/*.ts', '**/app/**/*.schema.ts']` | Form schema files: `*FormDefaults` and `.default()` checks |
+
+Test files (`*.test`, `*.spec`, `*.stories`) and `scripts/**` are exempt. `useForm`/`useFormContext` come from `react-hook-form` (renamed or through a namespace import) and `zodResolver` from `@hookform/resolvers/zod` (renamed included); a local or other module's `useForm` passes. The empty-string `disabled` gate and the `mutateAsync` try/catch checks run only in files that import `react-hook-form`, so non-form buttons and helpers pass.
+
+- `local/rhf-form-contract` (`files` and `schemaFiles`):
+  - `useForm` options with an inline `defaultValues` object holding a literal value (string, number, boolean, `null`, template without expressions, empty array or object, also nested): export a `<form>FormDefaults` object from the schema file. Remote mappings (`name: lead.name`), calls and spreads pass.
+  - In `schemaFiles`, a `*FormDefaults` const whose init is not `satisfies` (`as X` and `const x: X = …` included).
+  - `useForm` without `resolver: zodResolver(…)`, `useForm()` included. Options from a variable or call, or an object with a spread and no `resolver` key, pass.
+  - `register` destructured (renamed included) from `useForm()`/`useFormContext()` or from a binding holding one, and `<x>.register(…)` on such a binding, on `control` destructured from it or on `form.control`. Other `.register()` calls (`z.globalRegistry`, service workers) pass.
+  - Submit gates: `isValid` destructured from `formState` (`const { formState: { isValid } } = useForm()`, `const { isValid } = formState`) or read as `formState.isValid`/`form.formState.isValid`; a `mode` option other than `'onSubmit'`; a `disabled` JSX attribute whose expression compares with `''` (`===`, `!==`, `==`, `!=`, nested callbacks included).
+  - `await mutateAsync(…)` (destructured from a mutation result, renamed included) or `await mutation.mutateAsync(…)` not inside the `try` block of a `try`/`catch` in the same function; `try`/`finally` alone, the `catch` block and nested callbacks do not count. `mutate` and other sources' `mutateAsync` (SWR) pass. Mutation results are detected as in `local/no-mutation-in-effect`.
+- `local/no-schema-default` with `{ form: true }` (`schemaFiles`): every `.default()`/`.prefault()`, with no `*InputSchema` exemption; set initial values in the defaults object. The `isomorphic` schema block keeps its exemption.
 
 ## TypeScript
 

@@ -20,15 +20,26 @@ const insideInputSchema = ancestors => ancestors.some(ancestor => ancestor.type 
 module.exports = {
   meta: {
     type: 'problem',
-    schema: [],
+    schema: [{
+      type: 'object',
+      properties: { form: { type: 'boolean' } },
+      additionalProperties: false,
+    }],
     messages: {
       schemaDefault: 'Do not use `.default()` or `.prefault()` in shared data or output schemas; the server sets every value explicitly. Defaults belong only in a top-level `*InputSchema`. See skill `zod-schemas`.',
+      formDefault: 'Form fields never use `.default()` or `.prefault()`; set initial values in the defaults object. See skill `rhf-zod-forms`.',
     },
   },
   create(context) {
+    const { form = false } = context.options[0] ?? {};
     return {
       CallExpression(node) {
-        if (isDefaultCall(node) && !insideInputSchema(context.sourceCode.getAncestors(node))) {
+        if (!isDefaultCall(node)) {
+          return;
+        }
+        if (form) {
+          context.report({ node: node.callee.property, messageId: 'formDefault' });
+        } else if (!insideInputSchema(context.sourceCode.getAncestors(node))) {
           context.report({ node: node.callee.property, messageId: 'schemaDefault' });
         }
       },
