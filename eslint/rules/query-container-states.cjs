@@ -3,6 +3,7 @@ const { STATE_QUERY, isHookCall, unwrap } = require('./query-hooks.cjs');
 
 const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression']);
 const SKELETON = /Skeleton$/u;
+const JSX = new Set(['JSXElement', 'JSXFragment']);
 
 const localName = (pattern, key) => {
   const property = pattern.properties.find(entry => isKeyNamed(entry, key));
@@ -11,6 +12,24 @@ const localName = (pattern, key) => {
 };
 
 const leaves = node => (node.type === 'LogicalExpression' ? [...leaves(node.left), ...leaves(node.right)] : [node]);
+
+const isOr = node => node.type === 'LogicalExpression' && node.operator === '||';
+
+const guardRoot = (node) => {
+  const { parent } = node;
+  const wraps = parent.type === 'LogicalExpression' || (parent.type === 'UnaryExpression' && parent.operator === '!');
+  return wraps ? guardRoot(parent) : node;
+};
+
+const isEarlyReturn = ternary => JSX.has(ternary.consequent.type)
+  && (ternary.parent.type === 'ReturnStatement'
+    || (ternary.parent.type === 'ArrowFunctionExpression' && ternary.parent.body === ternary));
+
+const isGuard = (node) => {
+  const root = guardRoot(node);
+  const { parent } = root;
+  return parent.test === root && (parent.type === 'IfStatement' || (parent.type === 'ConditionalExpression' && isEarlyReturn(parent)));
+};
 
 const isNamed = (node, name) => name !== null && node.type === 'Identifier' && node.name === name;
 
@@ -59,7 +78,7 @@ module.exports = {
 
     return {
       'LogicalExpression[operator=\'||\']'(node) {
-        if (node.parent.type !== 'LogicalExpression' && leaves(node).some(isPendingFlag)) {
+        if (!isOr(node.parent) && isGuard(node) && leaves(node).some(isPendingFlag)) {
           context.report({ node, messageId: 'pendingOr' });
         }
       },

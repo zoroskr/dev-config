@@ -1,13 +1,26 @@
-const { QUERY_FAMILY, isHookCall, matchesGlobs } = require('./query-hooks.cjs');
+const { QUERY_FAMILY, TS_WRAPPERS, isHookCall, matchesGlobs } = require('./query-hooks.cjs');
 
 const HOOK_NAME = /^use[A-Z]/u;
 const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression']);
+
+const wrapperParent = node => (TS_WRAPPERS.has(node.parent.type) ? wrapperParent(node.parent) : node.parent);
+
+const keyName = ({ computed, key }) => {
+  if (key.type === 'Identifier' && !computed) {
+    return key.name;
+  }
+  return key.type === 'Literal' && typeof key.value === 'string' ? key.value : null;
+};
 
 const functionName = (node) => {
   if (node.id) {
     return node.id.name;
   }
-  return node.parent.type === 'VariableDeclarator' && node.parent.id.type === 'Identifier' ? node.parent.id.name : null;
+  const parent = wrapperParent(node);
+  if (parent.type === 'VariableDeclarator') {
+    return parent.id.type === 'Identifier' ? parent.id.name : null;
+  }
+  return parent.type === 'Property' ? keyName(parent) : null;
 };
 
 const insideHook = (sourceCode, node) => sourceCode.getAncestors(node)

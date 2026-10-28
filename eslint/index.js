@@ -5,7 +5,9 @@ import security from 'eslint-plugin-security';
 import isomorphicBoundary from './rules/isomorphic-boundary.cjs';
 import noComments from './rules/no-comments.cjs';
 import noConsole from './rules/no-console.cjs';
+import noInlineObjectProps from './rules/no-inline-object-props.cjs';
 import noInlineZodInfer from './rules/no-inline-zod-infer.cjs';
+import noMutationInEffect from './rules/no-mutation-in-effect.cjs';
 import noProcessEnv from './rules/no-process-env.cjs';
 import noQueryIsLoading from './rules/no-query-is-loading.cjs';
 import noSchemaDefault from './rules/no-schema-default.cjs';
@@ -28,7 +30,9 @@ const securityWarnings = Object.fromEntries(
   Object.keys(security.configs.recommended.rules).map(rule => [rule, 'warn']),
 );
 
-const filtersHook = '[id.name=/^use[A-Z]\\w*Filters$/]';
+const filtersHook = '[id.name=/^use(?:[A-Z]\\w*)?Filters$/]';
+const functionInits = ['init', 'init.expression', 'init.expression.expression']
+  .map(path => `[${path}.type=/^(ArrowFunctionExpression|FunctionExpression)$/]`);
 
 const restrictedSyntax = [
   {
@@ -66,7 +70,7 @@ const restrictedSyntax = [
   },
   ...[
     `FunctionDeclaration${filtersHook}`,
-    `VariableDeclarator${filtersHook}:matches([init.type='ArrowFunctionExpression'], [init.type='FunctionExpression'])`,
+    `VariableDeclarator${filtersHook}:matches(${functionInits.join(', ')})`,
   ].map(selector => ({
     selector,
     message: 'Do not declare a plural `use*Filters` hook; compose the single-purpose URL filter hooks in the Container. See skill `react-data-containers`.',
@@ -215,20 +219,9 @@ function layeredBackendConfigs(layeredBackend, productionRestrictedSyntax) {
   }));
 }
 
-const mutateCall = ':matches([callee.name=/^mutate(Async)?$/], [callee.property.name=/^mutate(Async)?$/])';
-
-const querySyntax = [{
-  selector: `CallExpression:matches([callee.name='useEffect'], [callee.property.name='useEffect']) > :function CallExpression${mutateCall}`,
-  message: 'Do not call `mutate`/`mutateAsync` inside `useEffect`; fire the mutation from an event handler. See skill `react-data-containers`.',
-}];
-
 const paginationName = '[name=/^(totalPages|startItem|endItem)$/]';
 
 const containerSyntax = [
-  {
-    selector: ':matches(JSXOpeningElement[name.name=/^[A-Z]/], JSXOpeningElement[name.type=\'JSXMemberExpression\']) > JSXAttribute[name.name!=\'style\'] > JSXExpressionContainer > ObjectExpression',
-    message: 'Do not pass an inline object literal to a component prop; build `const props` first. See skill `react-data-containers`.',
-  },
   ...[
     `VariableDeclarator > Identifier.id${paginationName}`,
     `VariableDeclarator ObjectPattern > Property > Identifier.value${paginationName}`,
@@ -265,6 +258,7 @@ function queryConfigs(query, productionRestrictedSyntax) {
       ignores: productionIgnores,
       rules: {
         'local/query-container-states': ['error', { errorComponent }],
+        'local/no-inline-object-props': 'error',
         'no-restricted-syntax': ['error', ...productionRestrictedSyntax, ...containerSyntax],
       },
     },
@@ -416,7 +410,6 @@ export default async function zoroskr(options = {}, ...userConfigs) {
   const typeAware = tsconfigPath !== undefined;
   const baseRestrictedSyntax = [
     ...restrictedSyntax,
-    ...(query ? querySyntax : []),
     ...(inferredReturnTypes ? inferredReturnTypeSyntax : []),
     ...extraRestrictedSyntax,
   ];
@@ -444,7 +437,9 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'isomorphic-boundary': isomorphicBoundary,
             'no-comments': noComments,
             'no-console': noConsole,
+            'no-inline-object-props': noInlineObjectProps,
             'no-inline-zod-infer': noInlineZodInfer,
+            'no-mutation-in-effect': noMutationInEffect,
             'no-process-env': noProcessEnv,
             'no-query-is-loading': noQueryIsLoading,
             'no-schema-default': noSchemaDefault,
@@ -497,7 +492,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
         'local/no-inline-zod-infer': 'error',
         'local/no-types-file': 'error',
         'local/no-zod-message-param': 'error',
-        ...(query ? { 'local/query-hook-destructuring': 'error', 'local/no-query-is-loading': 'error' } : {}),
+        ...(query ? { 'local/query-hook-destructuring': 'error', 'local/no-query-is-loading': 'error', 'local/no-mutation-in-effect': 'error' } : {}),
         'no-restricted-syntax': ['error', ...baseRestrictedSyntax],
       },
     },

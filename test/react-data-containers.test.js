@@ -24,7 +24,7 @@ const INLINE_PROPS = 'Do not pass an inline object literal to a component prop; 
 const FILTERS = 'Do not declare a plural `use*Filters` hook; compose the single-purpose URL filter hooks in the Container. See skill `react-data-containers`.';
 const OVERLOAD = 'Do not overload `use*` hooks; create a dedicated hook. See skill `react-data-containers`.';
 const PAGINATION = 'Do not declare `totalPages`, `startItem` or `endItem` in a Container; take `page` and `pageSize` from the pagination hook and let the pagination components derive the rest. See skill `react-data-containers`.';
-const EFFECT_MUTATION = 'Do not call `mutate`/`mutateAsync` inside `useEffect`; fire the mutation from an event handler. See skill `react-data-containers`.';
+const EFFECT_MUTATION = 'Do not call a mutation\'s `mutate`/`mutateAsync` (renamed included) directly in a `useEffect`/`useLayoutEffect` callback; fire it from an event handler. See skill `react-data-containers`.';
 
 async function lint(file, code, options = query) {
   const eslint = new ESLint({ cwd: app, overrideConfigFile: true, overrideConfig: await zoroskr(options) });
@@ -40,6 +40,10 @@ const render = '  return <Items items={data.items} />;\n';
 const container = (...lines) => `export function ItemsContainer() {\n${lines.join('')}}\n`;
 const valid = container(queryLine, pendingBranch, errorBranch, render);
 const containerFile = 'src/items/ItemsContainer.tsx';
+const withProps = jsx => container(queryLine, pendingBranch, errorBranch, `  return ${jsx};\n`);
+const reactImport = 'import { useEffect } from \'react\';\n\n';
+const effect = (setup, body) => `${reactImport}export function Seen({ id }: { id: string }) {\n${setup}  useEffect(() => {\n${body}  }, [id]);\n  return null;\n}\n`;
+const mutationLine = '  const { mutate } = api.items.seen.useMutation();\n';
 
 const rejected = [
   ['src/items/Items.tsx', 'export function Items() {\n  const { data } = api.items.list.useQuery();\n  return data;\n}\n', [PLACEMENT]],
@@ -78,10 +82,33 @@ const rejected = [
   [containerFile, container(queryLine, pendingBranch, errorBranch, '  const totalPages = Math.ceil(data.totalItems / 10);\n', '  return <Items items={data.items} totalPages={totalPages} />;\n'), [PAGINATION]],
   [containerFile, container(queryLine, pendingBranch, errorBranch, '  const { startItem, endItem = 0 } = data.range;\n', '  return <Items start={startItem} end={endItem} />;\n'), [PAGINATION, PAGINATION]],
   [containerFile, container(queryLine, pendingBranch, errorBranch, '  const [totalPages] = data.pages;\n', '  return <Items pages={totalPages} />;\n'), [PAGINATION]],
-  ['src/items/Seen.tsx', 'export function Seen({ id }: { id: string }) {\n  const { mutate } = api.items.seen.useMutation();\n  useEffect(() => {\n    mutate({ id });\n  }, [id, mutate]);\n  return null;\n}\n', [EFFECT_MUTATION]],
-  ['src/items/Seen.tsx', 'export function Seen() {\n  const { mutateAsync } = api.items.seen.useMutation();\n  React.useEffect(() => {\n    if (ready) {\n      void mutateAsync();\n    }\n  }, [mutateAsync]);\n  return null;\n}\n', [EFFECT_MUTATION]],
-  ['src/items/Seen.tsx', 'export function Seen() {\n  useEffect(() => {\n    void seen.mutateAsync();\n  }, []);\n  return null;\n}\n', [EFFECT_MUTATION]],
-  ['src/items/Seen.test.tsx', 'export function Seen() {\n  useEffect(() => {\n    mutate();\n  }, []);\n  return null;\n}\n', [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', effect(mutationLine, '    mutate({ id });\n'), [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', 'import React from \'react\';\n\nexport function Seen() {\n  const { mutateAsync } = api.items.seen.useMutation();\n  React.useEffect(() => {\n    if (ready) {\n      void mutateAsync();\n    }\n  }, [mutateAsync]);\n  return null;\n}\n', [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', 'import * as React from \'react\';\n\nexport function Seen() {\n  const seen = api.items.seen.useMutation();\n  React.useEffect(() => {\n    void seen.mutateAsync();\n  }, [seen]);\n  return null;\n}\n', [EFFECT_MUTATION]],
+  ['src/items/Seen.test.tsx', effect(mutationLine, '    mutate({ id });\n'), [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', effect('  const { mutate: markSeen } = api.items.seen.useMutation();\n', '    markSeen({ id });\n'), [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', effect('  const { mutateAsync: save = noop } = api.items.seen.useMutation();\n', '    void save({ id });\n'), [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', 'import { useMutation as useSave } from \'@tanstack/react-query\';\nimport { useLayoutEffect } from \'react\';\n\nexport function Seen() {\n  const { mutateAsync: save } = useSave(options);\n  useLayoutEffect(() => {\n    void save();\n  }, [save]);\n  return null;\n}\n', [EFFECT_MUTATION]],
+  ['src/items/Seen.tsx', 'import { useEffect as useMount } from \'react\';\n\nexport function Seen() {\n  const { mutate } = api.items.seen.useMutation() satisfies Seen;\n  useMount(function () {\n    mutate();\n  }, [mutate]);\n  return null;\n}\n', [EFFECT_MUTATION]],
+  ['src/items/use-items.ts', 'export const useItems = (() => api.items.list.useQuery()) satisfies () => unknown;\n', [WRAPPER]],
+  ['src/items/use-items.ts', 'export const useItems = (function () {\n  return api.items.list.useQuery();\n}) as Hook;\n', [WRAPPER]],
+  ['src/items/use-items.ts', 'export const useItems = (() => api.items.list.useQuery())!;\n', [WRAPPER]],
+  ['src/items/use-items.ts', 'export const useItems = <Hook>(() => api.items.list.useQuery());\n', [WRAPPER]],
+  ['src/items/hooks.ts', 'export const hooks = {\n  useItems() {\n    return api.items.list.useQuery();\n  },\n};\n', [WRAPPER]],
+  ['src/items/hooks.ts', 'export const hooks = {\n  useItems: () => api.items.list.useQuery(),\n};\n', [WRAPPER]],
+  ['src/items/hooks.ts', 'export const hooks = {\n  \'useItems\': (() => api.items.list.useQuery()) satisfies Hook,\n};\n', [WRAPPER]],
+  [containerFile, withProps('isPending || isRefetching ? <ItemsSkeleton /> : <Items items={data.items} />'), [PENDING_OR]],
+  [containerFile, container(queryLine, pendingBranch, errorBranch, '  if ((isRefetching || isPending) && data.items.length === 0) {\n    return <ItemsSkeleton />;\n  }\n', render), [PENDING_OR]],
+  [containerFile, withProps('<Items filters={{ status: data.status } satisfies Filters} />'), [INLINE_PROPS]],
+  [containerFile, withProps('<Items filters={{ status: \'open\' } as const} />'), [INLINE_PROPS]],
+  [containerFile, withProps('<Items filters={isRefetching ? { status: \'open\' } : { status: \'closed\' }} />'), [INLINE_PROPS, INLINE_PROPS]],
+  [containerFile, withProps('<Items filters={isRefetching && { status: \'open\' }} />'), [INLINE_PROPS]],
+  [containerFile, withProps('<Items {...{ config: { rows: data.items } }} />'), [INLINE_PROPS]],
+  [containerFile, withProps('<UI.Table {...{ items: data.items, ...{ config: { rows: data.items } } }} />'), [INLINE_PROPS]],
+  ['src/hooks/use-filters.ts', 'export const useFilters = () => 1;\n', [FILTERS], {}],
+  ['src/hooks/use-filters.ts', 'export function useFilters() {\n  return 1;\n}\n', [FILTERS], {}],
+  ['src/items/use-item-filters.ts', 'export const useItemFilters = (() => 1) satisfies () => number;\n', [FILTERS], {}],
+  ['src/items/use-item-filters.ts', 'export const useItemFilters = (function () {\n  return 1;\n}) as Hook;\n', [FILTERS], {}],
 ];
 
 for (const [file, code, messages, options] of rejected) {
@@ -116,7 +143,7 @@ const accepted = [
   ['src/items/Items.tsx', 'export function Items() {\n  return <List filters={{ status: \'open\' }} />;\n}\n'],
   ['src/hooks/use-search-filter.ts', 'export function useSearchFilter() {\n  return 1;\n}\n', {}],
   ['src/hooks/use-enum-filter.ts', 'export const useEnumFilter = () => 1;\n', {}],
-  ['src/hooks/use-filters.ts', 'export const useFilters = () => 1;\n', {}],
+  ['src/hooks/use-filters.ts', 'export const useFiltersCount = () => 1;\n', {}],
   ['src/items/filters.ts', 'export const itemFilters = { status: \'open\' };\n', {}],
   ['src/items/parse.ts', 'export function parse(value: string): string;\nexport function parse(value: number): number;\nexport function parse(value: unknown) {\n  return value;\n}\n', {}],
   [containerFile, container(queryLine, pendingBranch, errorBranch, '  const { page, pageSize, goToPage } = usePagination();\n', '  return <PageButtons currentPage={page} pageSize={pageSize} totalItems={data.totalItems} onPageClick={goToPage} />;\n')],
@@ -125,6 +152,23 @@ const accepted = [
   ['src/items/Seen.tsx', 'export function Seen({ id }: { id: string }) {\n  const { mutate } = api.items.seen.useMutation();\n  return <button onClick={() => mutate({ id })} />;\n}\n'],
   ['src/items/Seen.tsx', 'export function Seen() {\n  useEffect(() => {\n    track();\n  }, []);\n  return null;\n}\n'],
   ['src/items/Seen.tsx', 'export function Seen() {\n  useEffect(() => {\n    mutate();\n  }, []);\n  return null;\n}\n', {}],
+  ['src/items/Seen.tsx', effect(mutationLine, '    const onFocus = () => mutate({ id });\n    window.addEventListener(\'focus\', onFocus);\n    return () => window.removeEventListener(\'focus\', onFocus);\n')],
+  ['src/items/Seen.tsx', effect(mutationLine, '    const timer = setTimeout(() => mutate({ id }), 100);\n    return () => clearTimeout(timer);\n')],
+  ['src/items/Seen.tsx', effect('  const { mutateAsync: save } = api.items.seen.useMutation();\n', '    void load().then(() => save({ id }));\n')],
+  ['src/items/Seen.tsx', effect('  const { mutate } = useSWR(id);\n', '    void mutate();\n')],
+  ['src/items/Seen.tsx', `import { mutate } from 'swr';\n${effect('', '    void mutate(id);\n')}`],
+  ['src/items/Seen.tsx', effect('  const { reset } = api.items.seen.useMutation();\n', '    reset();\n')],
+  ['src/items/Seen.tsx', `import { useEffect } from './effects';\n\nexport function Seen() {\n${mutationLine}  useEffect(() => {\n    mutate();\n  }, [mutate]);\n  return null;\n}\n`],
+  ['src/items/Seen.tsx', `import { useMutation } from './mutations';\n${effect('  const { mutate } = useMutation();\n', '    mutate();\n')}`],
+  ['src/auth/AuthProvider.tsx', 'export const AuthProvider = (({ children }: Props) => {\n  const { data } = api.auth.session.useQuery();\n  return <Context value={data}>{children}</Context>;\n}) satisfies FC<Props>;\n'],
+  ['src/auth/AuthProvider.tsx', 'export const providers = {\n  session: () => api.auth.session.useQuery(),\n};\n'],
+  [containerFile, container(queryLine, pendingBranch, errorBranch, '  const busy = isPending || isRefetching;\n', '  return <Items items={data.items} busy={busy} />;\n')],
+  [containerFile, withProps('<Items items={data.items} busy={isPending || isRefetching} />')],
+  [containerFile, container(queryLine, pendingBranch, errorBranch, '  const label = isPending || isRefetching ? \'a\' : \'b\';\n', '  return <Items items={data.items} label={label} />;\n')],
+  [containerFile, withProps('<Items items={data.items} style={isRefetching ? { opacity: 0.5 } : undefined} />')],
+  [containerFile, withProps('<div data-items={{ a: 1 } as const}><Items items={data.items} /></div>')],
+  [containerFile, withProps('<Items {...{ items: data.items }} />')],
+  [containerFile, withProps('<Items {...{ style: { color: \'red\' } }} items={data.items} />')],
 ];
 
 for (const [file, code, options] of accepted) {
@@ -141,17 +185,19 @@ async function restrictedSyntaxMessages(file, code, options) {
 
 test('the container block keeps the package, production and restrictedSyntax selectors', async () => {
   const restrictedSyntax = [{ selector: 'Identifier[name=\'forbiddenName\']', message: 'Project-specific restriction.' }];
-  const code = container(queryLine, pendingBranch, errorBranch, '  const forbiddenName = data as Items;\n', '  void import(\'./b\');\n', '  return <Items items={forbiddenName} filters={{ a: 1 }} />;\n');
+  const code = container(queryLine, pendingBranch, errorBranch, '  const forbiddenName = data as Items;\n', '  void import(\'./b\');\n', '  const totalPages = 1;\n', '  return <Items items={forbiddenName} pages={totalPages} />;\n');
   const messages = await restrictedSyntaxMessages(containerFile, code, { query: true, restrictedSyntax });
   assert.ok(messages.some(message => message.includes('type assertions')), JSON.stringify(messages));
   assert.ok(messages.some(message => message.includes('lazy loader')), JSON.stringify(messages));
   assert.ok(messages.includes('Project-specific restriction.'), JSON.stringify(messages));
-  assert.ok(messages.includes(INLINE_PROPS), JSON.stringify(messages));
+  assert.ok(messages.includes(PAGINATION), JSON.stringify(messages));
 });
 
-test('the query selectors join the layer blocks', async () => {
-  const code = 'export function run() {\n  useEffect(() => {\n    mutate();\n  }, []);\n  throw new Error(\'x\');\n}\n';
-  const messages = await restrictedSyntaxMessages('src/a.service.ts', code, { query: true, layeredBackend: true });
+test('the query rules join the layer blocks', async () => {
+  const code = `${reactImport}export function run() {\n${mutationLine}  useEffect(() => {\n    mutate();\n  }, [mutate]);\n  throw new Error('x');\n}\n`;
+  const eslint = new ESLint({ cwd: app, overrideConfigFile: true, overrideConfig: await zoroskr({ query: true, layeredBackend: true }) });
+  const [result] = await eslint.lintText(code, { filePath: join(app, 'src/a.service.ts') });
+  const messages = result.messages.map(message => message.message);
   assert.ok(messages.includes(EFFECT_MUTATION), JSON.stringify(messages));
   assert.ok(messages.some(message => message.includes('TRPCError')), JSON.stringify(messages));
 });
