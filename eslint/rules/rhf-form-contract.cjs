@@ -9,7 +9,12 @@ const FORM_HOOKS = new Set(['useForm', 'useFormContext']);
 const FORM_STATE_HOOKS = new Set(['useFormState']);
 const FORM_RETURN = 'UseFormReturn';
 const FORM_REGISTER = 'UseFormRegister';
-const FORM_MEMBER_TYPES = new Map([['register', FORM_REGISTER], ['control', 'Control'], ['formState', 'FormState']]);
+const FORM_STATE = 'FormState';
+const FORM_MEMBER_TYPES = new Map([['register', FORM_REGISTER], ['control', 'Control'], ['formState', FORM_STATE]]);
+const REACT_MODULE = 'react';
+const COMPONENT_TYPES = new Set(['FC', 'FunctionComponent']);
+const ARRAY_ITERATORS = new Set(['map', 'flatMap', 'forEach', 'filter', 'find', 'findIndex', 'findLast', 'findLastIndex', 'some', 'every']);
+const MAX_HOPS = 5;
 const DEFAULTS_NAME = /FormDefaults$/u;
 const DEFAULT_MODE = 'onSubmit';
 const DISABLED_COMPARISON = 'JSXAttribute[name.name=\'disabled\'] > JSXExpressionContainer BinaryExpression[operator=/^[!=]==?$/]';
@@ -43,46 +48,109 @@ const constInit = (sourceCode, node) => {
     : null;
 };
 
-const typeName = (sourceCode, type) => {
-  if (type?.type !== 'TSTypeReference') {
+const resolveConst = (sourceCode, value, hops = 0) => {
+  const node = unwrap(value);
+  const init = hops < MAX_HOPS ? constInit(sourceCode, node) : null;
+  return init === null ? node : resolveConst(sourceCode, init, hops + 1);
+};
+
+const referenceName = type => type.typeName ?? type.expression;
+
+const importedTypeName = (sourceCode, type, source) => {
+  if (type?.type !== 'TSTypeReference' && type?.type !== 'TSInterfaceHeritage') {
     return null;
   }
-  const { typeName: name } = type;
-  if (name.type === 'TSQualifiedName') {
-    return importedName(sourceCode, name.left, FORM_MODULE) === NAMESPACE ? name.right.name : null;
-  }
-  return importedName(sourceCode, name, FORM_MODULE);
-};
-
-const typeMembers = (sourceCode, type) => {
-  if (type.type === 'TSTypeLiteral') {
-    return type.members;
-  }
-  if (type.type === 'TSIntersectionType') {
-    return type.types.flatMap(part => typeMembers(sourceCode, part));
-  }
-  const definition = type.type === 'TSTypeReference' && type.typeName.type === 'Identifier' ? definitionOf(sourceCode, type.typeName) : undefined;
-  switch (definition?.node.type) {
-    case 'TSInterfaceDeclaration':
-      return definition.node.body.body;
-    case 'TSTypeAliasDeclaration':
-      return typeMembers(sourceCode, definition.node.typeAnnotation);
+  const name = referenceName(type);
+  switch (name.type) {
+    case 'TSQualifiedName':
+      return importedName(sourceCode, name.left, source) === NAMESPACE ? name.right.name : null;
+    case 'MemberExpression':
+      return !name.computed && importedName(sourceCode, name.object, source) === NAMESPACE ? name.property.name : null;
     default:
-      return [];
+      return importedName(sourceCode, name, source);
   }
 };
 
-const memberType = (sourceCode, type, key) => {
-  if (type === null || typeof type === 'string') {
+const typeName = (sourceCode, type) => importedTypeName(sourceCode, type, FORM_MODULE);
+
+const formName = (sourceCode, type) => (typeof type === 'string' ? type : typeName(sourceCode, type));
+
+const isGlobalReact = (sourceCode, name) => name.type === 'TSQualifiedName' && name.left.type === 'Identifier'
+  && name.left.name === 'React' && definitionOf(sourceCode, name.left) === undefined;
+
+const isComponentType = (sourceCode, type) => type?.type === 'TSTypeReference'
+  && (COMPONENT_TYPES.has(importedTypeName(sourceCode, type, REACT_MODULE))
+    || (isGlobalReact(sourceCode, type.typeName) && COMPONENT_TYPES.has(type.typeName.right.name)));
+
+const utilityName = (sourceCode, type) => {
+  const name = referenceName(type);
+  return name.type === 'Identifier' && definitionOf(sourceCode, name) === undefined ? name.name : null;
+};
+
+const literalKeys = (type) => {
+  if (type?.type === 'TSUnionType') {
+    const parts = type.types.map(literalKeys);
+    return parts.includes(null) ? null : parts.flat();
+  }
+  return type?.type === 'TSLiteralType' && typeof type.literal.value === 'string' ? [type.literal.value] : null;
+};
+
+const ownMemberType = (members, key) => members.find(candidate => candidate.type === 'TSPropertySignature' && !candidate.computed
+  && exportedName(candidate.key) === key)?.typeAnnotation?.typeAnnotation ?? null;
+
+const firstType = types => types.find(type => type !== null) ?? null;
+
+const memberType = (sourceCode, type, key, hops = 0) => {
+  if (type === null || hops > MAX_HOPS) {
+    return null;
+  }
+  if (typeof type === 'string') {
     return type === FORM_RETURN ? FORM_MEMBER_TYPES.get(key) ?? null : null;
   }
   const name = typeName(sourceCode, type);
   if (name !== null) {
     return memberType(sourceCode, name, key);
   }
-  const member = typeMembers(sourceCode, type).find(candidate => candidate.type === 'TSPropertySignature' && !candidate.computed
-    && exportedName(candidate.key) === key);
-  return member?.typeAnnotation?.typeAnnotation ?? null;
+  switch (type.type) {
+    case 'TSTypeLiteral':
+      return ownMemberType(type.members, key);
+    case 'TSIntersectionType':
+      return firstType(type.types.map(part => memberType(sourceCode, part, key, hops + 1)));
+    case 'TSTypeReference':
+    case 'TSInterfaceHeritage':
+      return referencedMemberType(sourceCode, type, key, hops + 1);
+    default:
+      return null;
+  }
+};
+
+function referencedMemberType(sourceCode, type, key, hops) {
+  const [base, keys] = type.typeArguments?.params ?? [];
+  switch (utilityName(sourceCode, type)) {
+    case 'Pick':
+      return literalKeys(keys)?.includes(key) ? memberType(sourceCode, base, key, hops) : null;
+    case 'Omit':
+      return literalKeys(keys)?.includes(key) === false ? memberType(sourceCode, base, key, hops) : null;
+    default:
+      break;
+  }
+  const name = referenceName(type);
+  const definition = name.type === 'Identifier' ? definitionOf(sourceCode, name) : undefined;
+  switch (definition?.node.type) {
+    case 'TSInterfaceDeclaration':
+      return ownMemberType(definition.node.body.body, key)
+        ?? firstType(definition.node.extends.map(heritage => memberType(sourceCode, heritage, key, hops)));
+    case 'TSTypeAliasDeclaration':
+      return memberType(sourceCode, definition.node.typeAnnotation, key, hops);
+    default:
+      return null;
+  }
+}
+
+const componentPropsType = (sourceCode, fn) => {
+  const { parent } = fn;
+  const type = parent.type === 'VariableDeclarator' && parent.init === fn ? parent.id.typeAnnotation?.typeAnnotation : undefined;
+  return isComponentType(sourceCode, type) ? type.typeArguments?.params[0] ?? null : null;
 };
 
 const patternType = (sourceCode, pattern) => {
@@ -96,35 +164,50 @@ const patternType = (sourceCode, pattern) => {
   if (parent.type === 'Property' && parent.value === pattern && parent.parent.type === 'ObjectPattern' && !parent.computed) {
     return memberType(sourceCode, patternType(sourceCode, parent.parent), exportedName(parent.key));
   }
-  return null;
+  return FUNCTIONS.has(parent.type) && parent.params[0] === pattern ? componentPropsType(sourceCode, parent) : null;
 };
 
-const formTypeOf = (sourceCode, node) => {
-  const definition = node.type === 'Identifier' ? definitionOf(sourceCode, node) : undefined;
-  if (definition?.type !== 'Parameter') {
-    return null;
+const rootPattern = (pattern) => {
+  const { parent } = pattern;
+  if ((parent.type === 'AssignmentPattern' && parent.left === pattern) || (parent.type === 'Property' && parent.parent.type === 'ObjectPattern')) {
+    return rootPattern(parent.type === 'Property' ? parent.parent : parent);
   }
-  const type = patternType(sourceCode, definition.name);
-  return typeof type === 'string' ? type : typeName(sourceCode, type);
+  return pattern;
 };
+
+const memberKey = node => (node.computed ? (node.property.type === 'Literal' ? node.property.value : null) : node.property.name);
+
+const valueType = (sourceCode, value) => {
+  const node = unwrap(value);
+  if (node?.type === 'MemberExpression') {
+    const key = memberKey(node);
+    return key === null ? null : memberType(sourceCode, valueType(sourceCode, node.object), key);
+  }
+  const definition = node?.type === 'Identifier' ? definitionOf(sourceCode, node) : undefined;
+  return definition?.type === 'Parameter' ? patternType(sourceCode, definition.name) : null;
+};
+
+const formTypeOf = (sourceCode, node) => formName(sourceCode, valueType(sourceCode, node));
 
 const isFormObject = (sourceCode, value) => {
   const node = unwrap(value);
+  if (formTypeOf(sourceCode, node) === FORM_RETURN) {
+    return true;
+  }
   if (node?.type !== 'Identifier') {
     return isFormHookCall(sourceCode, node, FORM_HOOKS);
   }
   const definition = definitionOf(sourceCode, node);
-  return formTypeOf(sourceCode, node) === FORM_RETURN
-    || (definition?.type === 'Variable' && definition.node.id.type === 'Identifier' && isFormHookCall(sourceCode, unwrap(definition.node.init), FORM_HOOKS));
+  return (definition?.type === 'Variable' && definition.node.id.type === 'Identifier' && isFormHookCall(sourceCode, unwrap(definition.node.init), FORM_HOOKS));
 };
 
 const isFormMember = (sourceCode, value, key) => {
   const node = unwrap(value);
-  if (node?.type !== 'Identifier') {
-    return isMemberNamed(node, key) && isFormObject(sourceCode, node.object);
-  }
   if (formTypeOf(sourceCode, node) === FORM_MEMBER_TYPES.get(key)) {
     return true;
+  }
+  if (node?.type !== 'Identifier') {
+    return isMemberNamed(node, key) && isFormObject(sourceCode, node.object);
   }
   const definition = definitionOf(sourceCode, node);
   if (definition?.type !== 'Variable' || definition.node.init === null) {
@@ -197,7 +280,9 @@ const isSettledByCatch = (call, top) => {
 const isReturned = ({ parent }, node) => (parent.type === 'ReturnStatement' && parent.argument === node)
   || (parent.type === 'ArrowFunctionExpression' && parent.body === node);
 
-const isHandedOver = node => isReturned(node, node) || (node.parent.type === 'AwaitExpression' && node.parent.argument === node);
+const isAwaited = node => node.parent.type === 'AwaitExpression' && node.parent.argument === node;
+
+const isHandedOver = node => isReturned(node, node) || isAwaited(node);
 
 const isPromiseCombinator = callee => callee.type === 'MemberExpression' && !callee.computed
   && callee.object.type === 'Identifier' && callee.object.name === 'Promise' && PROMISE_COMBINATORS.has(callee.property.name);
@@ -212,10 +297,39 @@ const settlingCall = (node) => {
     : node;
 };
 
+const isArrayIteration = call => call.callee.type === 'MemberExpression' && !call.callee.computed
+  && ARRAY_ITERATORS.has(call.callee.property.name);
+
 const receivingCall = (fn) => {
   const argument = outsideArrays(fn);
   const { parent } = argument;
-  return parent.type === 'CallExpression' && parent.arguments.includes(argument) ? settlingCall(parent) : null;
+  if (parent.type !== 'CallExpression' || !parent.arguments.includes(argument)) {
+    return null;
+  }
+  const settling = settlingCall(parent);
+  return isArrayIteration(parent) && settling === parent ? null : settling;
+};
+
+const returnedValues = (fn) => {
+  if (fn.body.type !== 'BlockStatement') {
+    return [fn.body];
+  }
+  const values = [];
+  const visit = (node) => {
+    if (node.type === 'ReturnStatement') {
+      values.push(node.argument);
+      return;
+    }
+    if (!FUNCTIONS.has(node.type)) {
+      Object.entries(node)
+        .filter(([key]) => key !== 'parent')
+        .flatMap(([, child]) => child)
+        .filter(child => typeof child?.type === 'string')
+        .forEach(visit);
+    }
+  };
+  fn.body.body.forEach(visit);
+  return values;
 };
 
 const enclosingFunction = (sourceCode, node) => sourceCode.getAncestors(node).findLast(ancestor => FUNCTIONS.has(ancestor.type));
@@ -242,7 +356,7 @@ const isSettledByCaller = (sourceCode, top) => {
   }
   const outer = chainTop(call);
   return isSettledByCatch(call, outer)
-    || (outer.parent.type === 'AwaitExpression' && outer.parent.argument === outer && insideTryCatch(sourceCode, outer));
+    || (isAwaited(outer) && insideTryCatch(sourceCode, outer));
 };
 
 module.exports = {
@@ -250,7 +364,11 @@ module.exports = {
     type: 'problem',
     schema: [{
       type: 'object',
-      properties: { schemaFiles: { type: 'array', items: { type: 'string' } } },
+      properties: {
+        files: { type: 'array', items: { type: 'string' } },
+        schemaFiles: { type: 'array', items: { type: 'string' } },
+        constantsFiles: { type: 'array', items: { type: 'string' } },
+      },
       additionalProperties: false,
     }],
     messages: {
@@ -265,15 +383,33 @@ module.exports = {
   },
   create(context) {
     const { sourceCode } = context;
-    const { schemaFiles = [] } = context.options[0] ?? {};
+    const { files = [], schemaFiles = [], constantsFiles = [] } = context.options[0] ?? {};
     const isSchemaFile = matchesGlobs(context, schemaFiles);
+    const isConstantsFile = matchesGlobs(context, constantsFiles);
+    const onlyDefaults = isConstantsFile && !isSchemaFile && !matchesGlobs(context, files);
     const isComponentFile = context.filename.endsWith('.tsx');
     const importsForm = sourceCode.ast.body.some(statement => statement.type === 'ImportDeclaration' && statement.source.value === FORM_MODULE);
 
-    const resolved = (value) => {
-      const node = unwrap(value);
-      return constInit(sourceCode, node) ?? node;
+    const resolved = value => resolveConst(sourceCode, value);
+
+    const defaultsObjects = (value) => {
+      const node = resolved(value);
+      const definition = node?.type === 'Identifier' ? definitionOf(sourceCode, node) : undefined;
+      const fn = definition?.type === 'FunctionName' ? definition.node : node;
+      return FUNCTIONS.has(fn?.type) ? returnedValues(fn).map(resolved) : [node];
     };
+
+    const providesResolver = (object, depth = 0) => object.properties.some((property) => {
+      if (property.type !== 'SpreadElement') {
+        return false;
+      }
+      const value = resolved(property.argument);
+      if (value?.type !== 'ObjectExpression' || depth === MAX_HOPS) {
+        return true;
+      }
+      const resolver = value.properties.find(candidate => isKeyNamed(candidate, 'resolver'));
+      return resolver === undefined ? providesResolver(value, depth + 1) : isZodResolverCall(sourceCode, resolved(resolver.value));
+    });
 
     const checkOptions = (call) => {
       const options = call.arguments.length === 0 ? null : resolved(call.arguments[0]);
@@ -282,13 +418,13 @@ module.exports = {
       }
       const properties = options?.properties ?? [];
       const resolver = properties.find(property => isKeyNamed(property, 'resolver'));
-      const spread = properties.some(property => property.type === 'SpreadElement');
-      if (resolver === undefined ? !spread : !isZodResolverCall(sourceCode, resolved(resolver.value))) {
+      const zod = resolver === undefined ? options !== null && providesResolver(options) : isZodResolverCall(sourceCode, resolved(resolver.value));
+      if (!zod) {
         context.report({ node: resolver ?? call, messageId: 'resolver' });
       }
       const defaults = properties.find(property => isKeyNamed(property, 'defaultValues'));
-      const values = defaults === undefined ? null : resolved(defaults.value);
-      if (values?.type === 'ObjectExpression' && hasLiteralValue(values)) {
+      const values = defaults === undefined ? [] : defaultsObjects(defaults.value);
+      if (values.some(object => object?.type === 'ObjectExpression' && hasLiteralValue(object))) {
         context.report({ node: defaults, messageId: 'inlineDefaults' });
       }
       const mode = properties.find(property => isKeyNamed(property, 'mode'));
@@ -303,12 +439,15 @@ module.exports = {
       if (isFormState(sourceCode, init)) {
         properties.filter(property => isKeyNamed(property, 'isValid')).forEach(node => context.report({ node, messageId: 'submitGate' }));
       }
-      if (!isFormObject(sourceCode, init)) {
-        return;
-      }
+      const formObject = isFormObject(sourceCode, init);
+      const type = valueType(sourceCode, init);
       for (const property of properties) {
-        if (isKeyNamed(property, 'register')) {
+        const key = property.computed ? null : exportedName(property.key);
+        if ((formObject && isKeyNamed(property, 'register')) || (key !== null && formName(sourceCode, memberType(sourceCode, type, key)) === FORM_REGISTER)) {
           context.report({ node: property, messageId: 'register' });
+        }
+        if (!formObject) {
+          continue;
         }
         if (isKeyNamed(property, 'formState') && property.value.type === 'ObjectPattern') {
           property.value.properties
@@ -318,17 +457,27 @@ module.exports = {
       }
     };
 
+    const checkDefaultsType = (node) => {
+      if (node.id.type === 'Identifier' && DEFAULTS_NAME.test(node.id.name) && node.init !== null && node.init.type !== 'TSSatisfiesExpression') {
+        context.report({ node, messageId: 'defaultsSatisfies' });
+      }
+    };
+
+    if (onlyDefaults) {
+      return { VariableDeclarator: checkDefaultsType };
+    }
+
     return {
       CallExpression(node) {
         if (isFormHookCall(sourceCode, node, USE_FORM)) {
           checkOptions(node);
         }
-        if (formTypeOf(sourceCode, node.callee) === FORM_REGISTER) {
+        if (unwrap(node.callee).type !== 'MemberExpression' && formTypeOf(sourceCode, node.callee) === FORM_REGISTER) {
           context.report({ node, messageId: 'register' });
         }
         if (importsForm && isMutationTrigger(sourceCode, node.callee, ['mutateAsync'])) {
           const top = chainTop(node);
-          if (!isSettledByCatch(node, top) && isHandedOver(top) && !insideTryCatch(sourceCode, top)
+          if (!isSettledByCatch(node, top) && isHandedOver(top) && !(isAwaited(top) && insideTryCatch(sourceCode, top))
             && !isSettledByCaller(sourceCode, top)) {
             context.report({ node: top, messageId: 'mutateAsync' });
           }
@@ -338,21 +487,24 @@ module.exports = {
         if (node.id.type === 'ObjectPattern' && node.init !== null) {
           checkPattern(node.id, node.init);
         }
-        if (node.id.type !== 'Identifier' || !DEFAULTS_NAME.test(node.id.name)) {
-          return;
+        if (isSchemaFile || isConstantsFile) {
+          checkDefaultsType(node);
         }
-        if (isSchemaFile && node.init !== null && node.init.type !== 'TSSatisfiesExpression') {
-          context.report({ node, messageId: 'defaultsSatisfies' });
-        }
-        if (!isSchemaFile && isComponentFile) {
+        if (node.id.type === 'Identifier' && DEFAULTS_NAME.test(node.id.name) && !isSchemaFile && isComponentFile) {
           context.report({ node, messageId: 'defaultsLocation' });
+        }
+      },
+      ObjectPattern(node) {
+        if (rootPattern(node).parent.type !== 'VariableDeclarator' && formName(sourceCode, patternType(sourceCode, node)) === FORM_STATE) {
+          node.properties.filter(property => isKeyNamed(property, 'isValid')).forEach(property => context.report({ node: property, messageId: 'submitGate' }));
         }
       },
       MemberExpression(node) {
         if (isMemberNamed(node, 'isValid') && isFormState(sourceCode, node.object)) {
           context.report({ node, messageId: 'submitGate' });
         }
-        if (isMemberNamed(node, 'register') && (isFormObject(sourceCode, node.object) || isFormMember(sourceCode, node.object, 'control'))) {
+        if ((isMemberNamed(node, 'register') && (isFormObject(sourceCode, node.object) || isFormMember(sourceCode, node.object, 'control')))
+          || formTypeOf(sourceCode, node) === FORM_REGISTER) {
           context.report({ node, messageId: 'register' });
         }
       },

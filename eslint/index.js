@@ -348,19 +348,20 @@ function appRouterConfigs(appRouter) {
 const formsDefaults = {
   files: ['**/*.tsx'],
   schemaFiles: ['**/app/**/schemas/**/*.ts', '**/app/**/*.schema.ts'],
+  constantsFiles: ['**/constants/**/*.ts', '**/*.constants.ts'],
 };
 
 function formsConfigs(forms) {
   if (!forms) {
     return [];
   }
-  const { files, schemaFiles } = { ...formsDefaults, ...(typeof forms === 'object' ? forms : {}) };
+  const { files, schemaFiles, constantsFiles } = { ...formsDefaults, ...(typeof forms === 'object' ? forms : {}) };
   return [
     {
       name: 'zoroskr/forms/contract',
-      files: [...files, ...schemaFiles],
+      files: [...files, ...schemaFiles, ...constantsFiles],
       ignores: productionIgnores,
-      rules: { 'local/rhf-form-contract': ['error', { schemaFiles }] },
+      rules: { 'local/rhf-form-contract': ['error', { files, schemaFiles, constantsFiles }] },
     },
     {
       name: 'zoroskr/forms/schemas',
