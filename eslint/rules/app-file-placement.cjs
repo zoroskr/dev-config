@@ -1,0 +1,94 @@
+const { matchesGlobs, relativeFilename } = require('./query-hooks.cjs');
+
+const CATEGORIES = new Set(['components', 'constants', 'hooks', 'schemas', 'utils']);
+const GENERIC_NAMES = new Set(['constants', 'helpers', 'options', 'schema', 'types', 'utils']);
+const SOURCE_EXTENSION = /\.tsx?$/u;
+const TEST_SUFFIX = /\.(?:test|spec|stories)$/u;
+const KIND_SUFFIX = /\.(schema|util|constants?|hook)$/u;
+const HOOK_NAME = /^use[A-Z]/u;
+const KIND_FOLDERS = new Map([
+  ['schema', 'schemas'],
+  ['util', 'utils'],
+  ['constant', 'constants'],
+  ['constants', 'constants'],
+  ['hook', 'hooks'],
+]);
+const FOLDER_MESSAGES = new Map([
+  ['schemas', 'schemaFolder'],
+  ['utils', 'utilFolder'],
+  ['constants', 'constantsFolder'],
+  ['hooks', 'hookFolder'],
+]);
+
+const pascalCase = name => name
+  .split(/[^a-z0-9]+/iu)
+  .filter(part => part.length > 0)
+  .map(part => `${part[0].toUpperCase()}${part.slice(1)}`)
+  .join('');
+
+const placementProblems = (folders, name) => {
+  const withoutExtension = name.replace(SOURCE_EXTENSION, '');
+  const isTest = TEST_SUFFIX.test(withoutExtension);
+  const stem = withoutExtension.replace(TEST_SUFFIX, '');
+  const kind = KIND_SUFFIX.exec(stem)?.[1];
+  const unit = stem.replace(KIND_SUFFIX, '');
+  const isHook = kind === 'hook' || HOOK_NAME.test(unit);
+  const folder = isHook ? 'hooks' : KIND_FOLDERS.get(kind);
+  const problems = [];
+  if (folder !== undefined && !folders.includes(folder)) {
+    problems.push({ messageId: FOLDER_MESSAGES.get(folder) });
+  }
+  const isComponent = kind === undefined && !isHook && (name.endsWith('.tsx') || isTest);
+  if (folders.includes('components') && !isComponent) {
+    problems.push({ messageId: 'componentsOnly', data: { name } });
+  }
+  if (GENERIC_NAMES.has(stem)) {
+    problems.push({ messageId: 'genericName', data: { name } });
+  }
+  const expected = pascalCase(unit);
+  if (folders.some(segment => CATEGORIES.has(segment)) && expected.length > 0 && folders.at(-1) !== expected) {
+    problems.push({ messageId: 'unitFolder', data: { name, unit: expected } });
+  }
+  return problems;
+};
+
+module.exports = {
+  meta: {
+    type: 'problem',
+    schema: [{
+      type: 'object',
+      properties: { app: { type: 'array', items: { type: 'string' } } },
+      additionalProperties: false,
+    }],
+    messages: {
+      index: 'Do not create `index.ts` barrels; import the explicit file (`NavTabs/NavTabs`). See skill `nextjs-app-router`.',
+      schemaFolder: 'A `*.schema.ts` file lives below a `schemas/` folder (`schemas/LeadForm/lead-form.schema.ts`). See skill `nextjs-app-router`.',
+      utilFolder: 'A `*.util.ts` file lives below a `utils/` folder (`utils/NormalizeEmail/normalize-email.util.ts`). See skill `nextjs-app-router`.',
+      constantsFolder: 'A `*.constants.ts` file lives below a `constants/` folder (`constants/LeadStatus/lead-status.constants.ts`). See skill `nextjs-app-router`.',
+      hookFolder: 'A hook file (`use*.ts`, `*.hook.ts`) lives below a `hooks/` folder (`hooks/UseLeadForm/useLeadForm.ts`). See skill `nextjs-app-router`.',
+      componentsOnly: 'Only component files (`.tsx` and their tests) go below `components/`; move `{{name}}` to the feature `schemas/`, `utils/`, `constants/` or `hooks/` folder. See skill `nextjs-app-router`.',
+      unitFolder: 'Put `{{name}}` in its own `{{unit}}/` folder inside its category folder (`components/Foo/Foo.tsx`, `utils/NormalizeEmail/normalize-email.util.ts`). See skill `nextjs-app-router`.',
+      genericName: 'Do not use the generic file name `{{name}}`; name the unit (`<feature>.<concern>.util.ts`). See skill `nextjs-app-router`.',
+    },
+  },
+  create(context) {
+    const segments = relativeFilename(context).split('/');
+    const name = segments.at(-1) ?? '';
+    if (!SOURCE_EXTENSION.test(name) || name.endsWith('.d.ts')) {
+      return {};
+    }
+    const stem = name.replace(SOURCE_EXTENSION, '').replace(TEST_SUFFIX, '');
+    const problems = [
+      ...(stem === 'index' ? [{ messageId: 'index' }] : []),
+      ...(matchesGlobs(context, context.options[0]?.app ?? []) ? placementProblems(segments.slice(0, -1), name) : []),
+    ];
+    if (problems.length === 0) {
+      return {};
+    }
+    return {
+      Program(node) {
+        problems.forEach(problem => context.report({ node, ...problem }));
+      },
+    };
+  },
+};

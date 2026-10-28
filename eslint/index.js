@@ -2,6 +2,8 @@ import antfu from '@antfu/eslint-config';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import noSecrets from 'eslint-plugin-no-secrets';
 import security from 'eslint-plugin-security';
+import appFilePlacement from './rules/app-file-placement.cjs';
+import appRouterSyntax from './rules/app-router-syntax.cjs';
 import isomorphicBoundary from './rules/isomorphic-boundary.cjs';
 import noComments from './rules/no-comments.cjs';
 import noConsole from './rules/no-console.cjs';
@@ -17,6 +19,10 @@ import queryContainerStates from './rules/query-container-states.cjs';
 import queryHookDestructuring from './rules/query-hook-destructuring.cjs';
 import queryPlacement from './rules/query-placement.cjs';
 import requireProcedureOutput from './rules/require-procedure-output.cjs';
+import routeColocation from './rules/route-colocation.cjs';
+import routeGlobalScope from './rules/route-global-scope.cjs';
+import routeLoading from './rules/route-loading.cjs';
+import routeSegmentConfig from './rules/route-segment-config.cjs';
 import serviceExportsFunctions from './rules/service-exports-functions.cjs';
 
 const sourceFiles = '**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}';
@@ -295,6 +301,44 @@ function isomorphicConfigs(isomorphic) {
   ];
 }
 
+const appRouterDefaults = {
+  app: ['**/app/**/*.{ts,tsx}'],
+  shared: ['**/components/**/*.{ts,tsx}', '**/shared/**/*.{ts,tsx}'],
+  gateCallees: [],
+  serverCallerModules: [],
+};
+
+function appRouterConfigs(appRouter) {
+  if (!appRouter) {
+    return [];
+  }
+  const { app, shared, gateCallees, serverCallerModules } = { ...appRouterDefaults, ...(typeof appRouter === 'object' ? appRouter : {}) };
+  return [
+    {
+      name: 'zoroskr/app-router/placement',
+      files: [...app, ...shared],
+      rules: { 'local/app-file-placement': ['error', { app }] },
+    },
+    {
+      name: 'zoroskr/app-router/syntax',
+      files: typeScriptFiles,
+      ignores: productionIgnores,
+      rules: { 'local/app-router-syntax': ['error', { app, shared, serverCallerModules }] },
+    },
+    {
+      name: 'zoroskr/app-router/routes',
+      files: app,
+      ignores: productionIgnores,
+      rules: {
+        'local/route-colocation': 'error',
+        'local/route-global-scope': 'error',
+        'local/route-loading': ['error', { gateCallees }],
+        'local/route-segment-config': 'error',
+      },
+    },
+  ];
+}
+
 const typeScriptRules = {
   'ts/ban-ts-comment': 'error',
   'ts/consistent-type-definitions': ['error', 'type'],
@@ -404,6 +448,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     restrictedSyntax: extraRestrictedSyntax = [],
     layeredBackend = false,
     isomorphic = false,
+    appRouter = false,
     inferredReturnTypes = true,
     envFiles,
     typescript = {},
@@ -436,6 +481,8 @@ export default async function zoroskr(options = {}, ...userConfigs) {
         local: {
           rules: {
             ...localRules,
+            'app-file-placement': appFilePlacement,
+            'app-router-syntax': appRouterSyntax,
             'isomorphic-boundary': isomorphicBoundary,
             'no-comments': noComments,
             'no-console': noConsole,
@@ -451,6 +498,10 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'query-hook-destructuring': queryHookDestructuring,
             'query-placement': queryPlacement,
             'require-procedure-output': requireProcedureOutput,
+            'route-colocation': routeColocation,
+            'route-global-scope': routeGlobalScope,
+            'route-loading': routeLoading,
+            'route-segment-config': routeSegmentConfig,
             'service-exports-functions': serviceExportsFunctions,
           },
         },
@@ -527,6 +578,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     },
     ...layeredBackendConfigs(layeredBackend, productionRestrictedSyntax),
     ...isomorphicConfigs(isomorphic),
+    ...appRouterConfigs(appRouter),
     ...queryConfigs(query, productionRestrictedSyntax),
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),

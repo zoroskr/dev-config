@@ -43,6 +43,7 @@ The first argument takes these options; any other key is passed to `antfu()` (`n
 | `envFiles`            | `env.ts` | Regex sources exempt from `local/no-process-env` (the validated env module); replace the default `(?:^\|/)env\.ts$`  |
 | `layeredBackend`      | `false`  | tRPC layer rules per file suffix; pass `{ services, repositories, routers, schemas }` to override globs              |
 | `isomorphic`          | `false`  | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`                     |
+| `appRouter`           | `false`  | Next.js App Router structure rules; pass `{ app, shared, gateCallees, serverCallerModules }`                         |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
 
@@ -129,6 +130,46 @@ With `isomorphic` (skill `zod-schemas`), two local rules guard code shared by cl
 | `forbiddenImports` | `[]`                                                           | Extra module patterns for `local/isomorphic-boundary`; `*` matches any characters, e.g. `['firebase-admin', 'firebase-admin/*']`                                                                                                                                                                  |
 
 Type-only `import type` / `export type` declarations pass the boundary, since they are erased from the bundle.
+
+### With `appRouter`
+
+Skill `nextjs-app-router`. Pass `true` for the defaults or an object to override any key:
+
+```js
+export default zoroskr({
+  appRouter: {
+    gateCallees: ['requirePermission'],
+    serverCallerModules: ['src/server/trpc.ts', 'src/app/(global)/providers/server.ts'],
+  },
+});
+```
+
+| Key                   | Default                                                      | Use                                                                     |
+| --------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `app`                 | `['**/app/**/*.{ts,tsx}']`                                   | Route tree files                                                        |
+| `shared`              | `['**/components/**/*.{ts,tsx}', '**/shared/**/*.{ts,tsx}']` | Shared files where barrels are also banned                              |
+| `gateCallees`         | `[]`                                                         | Function names whose `await` in a page requires a sibling `loading.tsx` |
+| `serverCallerModules` | `[]`                                                         | The only files allowed to call `createCaller`/`createCallerFactory`     |
+
+Test files (`*.test`, `*.spec`, `*.stories`) and `scripts/**` are exempt, except from `local/app-file-placement`.
+
+- `local/app-file-placement` (`app` and `shared`, filename only): no `index.ts(x)`. In `app` also:
+  - `*.schema.ts` only below `schemas/`, `*.util.ts` below `utils/`, `*.constants.ts`/`*.constant.ts` below `constants/`, hooks (`use*.ts(x)`, `*.hook.ts`) below `hooks/`.
+  - Below `components/`, at any depth, only `.tsx` component files and their tests.
+  - A file below a category folder (`components`, `utils`, `schemas`, `constants`, `hooks`) sits in a folder named like its unit: the PascalCase of the file name without extension, `.test`/`.spec`/`.stories` and the `.schema`/`.util`/`.constants`/`.constant`/`.hook` suffix (`components/Foo/Foo.tsx`, `utils/NormalizeEmail/normalize-email.util.ts`, `hooks/UseOrders/useOrders.ts`).
+  - No generic names: `helpers`, `utils`, `constants`, `options`, `schema`, `types`.
+- `local/app-router-syntax` (production TypeScript):
+  - `app` and `shared`: no `export * from` or `export { x } from` (type re-exports included).
+  - `app` `.tsx`: no `z.*()` call, no `*Schema`/`schema` variable, no `isEditing`/`isEditMode` property or method signature.
+  - `page.ts(x)`: a default-exported function (declaration, arrow or a local binding) whose whole body is one `redirect()`/`permanentRedirect()` call with a string or template path; use `next.config` `redirects()`.
+  - `page|layout|loading|template|default.tsx` without `'use client'`: no `try`.
+  - Every file: `createCaller` and `createCallerFactory` calls (bare or as a method) outside `serverCallerModules`.
+- `local/route-global-scope` (`app`): an import, re-export or literal `import()` whose target has a `(global)` segment is rejected unless the folder holding `(global)` is an ancestor of the importing file, so `app/(global)` is app-wide and `app/orders/(global)` is private to `app/orders`. Relative paths and the `paths` of the nearest `tsconfig.json`/`tsconfig.strict.json` (with `extends` and `baseUrl`) are resolved; other bare imports pass.
+- `local/route-segment-config` (`app` `page`/`layout`): `export const dynamic = 'x'` when the nearest ancestor `layout.ts(x)` that exports `dynamic`, up to the `app` folder, exports the same value. A page's own folder layout counts as its ancestor.
+- `local/route-loading` (`app`): a `page.tsx` whose default export awaits a call to a `gateCallees` name (`await requirePermission()` or `await auth.requirePermission()`) needs a sibling `loading.tsx`; a `loading.tsx` renders a JSX element whose name ends with `Skeleton`.
+- `local/route-colocation` (`app`): a file below `<dir>/components/` when `<dir>` is not a route group and has a direct child folder with a `page.ts(x)`; a `<dir>/page.ts(x)` when `<dir>` is a static segment (not `[param]`, `(group)`, `_private` or `@slot`) with a direct child route folder (not a group, private folder, slot or category folder) holding a page; move it to `<dir>/(index)/page.tsx`. `[param]/page.tsx` stays.
+
+The filesystem rules cache directory and file reads for two seconds, so one lint run reads each folder once. The rules are local rules, not `no-restricted-syntax` blocks, so the package, production, `restrictedSyntax`, layer and container selectors keep firing on app files.
 
 ## TypeScript
 

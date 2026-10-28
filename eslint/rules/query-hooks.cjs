@@ -56,14 +56,18 @@ const globSource = glob => glob
   })
   .join('');
 
-const matchesGlobs = (context, globs) => {
+const relativeFilename = (context) => {
   const cwd = `${context.cwd.replaceAll('\\', '/').replace(/\/$/u, '')}/`;
   const filename = context.filename.replaceAll('\\', '/');
-  const relative = filename.startsWith(cwd) ? filename.slice(cwd.length) : filename;
+  return filename.startsWith(cwd) ? filename.slice(cwd.length) : filename;
+};
+
+const matchesGlobs = (context, globs) => {
+  const relative = relativeFilename(context);
   return globs.some((glob) => {
     // eslint-disable-next-line security/detect-non-literal-regexp -- escaped consumer glob
     return new RegExp(`^${globSource(glob)}$`, 'u').test(relative);
   });
 };
 
-module.exports = { QUERY_FAMILY, QUERY_MODULE, RESULT_HOOK, STATE_QUERY, TS_WRAPPERS, isHookCall, matchesGlobs, unwrap };
+module.exports = { QUERY_FAMILY, QUERY_MODULE, RESULT_HOOK, STATE_QUERY, TS_WRAPPERS, isHookCall, matchesGlobs, relativeFilename, unwrap };
