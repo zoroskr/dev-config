@@ -1,7 +1,7 @@
-const { defaultExportFunction, hasDirective, staticString } = require('./app-router.cjs');
+const { defaultExportFunction, hasDirective, keyName, memberName } = require('./app-router.cjs');
 const { findVariable } = require('./process-env.cjs');
 const { matchesGlobs, relativeFilename, unwrap } = require('./query-hooks.cjs');
-const { importedName, zodImportSpecifier } = require('./zod-binding.cjs');
+const { importedName, isZodConstructor } = require('./zod-binding.cjs');
 
 const PAGE_FILE = /(?:^|\/)page\.tsx?$/u;
 const SERVER_ROUTE_FILE = /(?:^|\/)(?:page|layout|loading|template|default)\.tsx$/u;
@@ -9,86 +9,6 @@ const REDIRECTS = new Set(['permanentRedirect', 'redirect']);
 const NAVIGATION_MODULE = 'next/navigation';
 const MODE_KEY = '/^(isEditing|isEditMode)$/';
 const CALLER_NAMES = new Set(['createCaller', 'createCallerFactory']);
-const ZOD_CONSTRUCTORS = new Set([
-  'any',
-  'array',
-  'base64',
-  'base64url',
-  'bigint',
-  'boolean',
-  'catch',
-  'cidrv4',
-  'cidrv6',
-  'cuid',
-  'cuid2',
-  'custom',
-  'date',
-  'discriminatedUnion',
-  'e164',
-  'email',
-  'emoji',
-  'enum',
-  'file',
-  'float32',
-  'float64',
-  'function',
-  'guid',
-  'hash',
-  'hex',
-  'hostname',
-  'instanceof',
-  'int',
-  'int32',
-  'int64',
-  'intersection',
-  'ipv4',
-  'ipv6',
-  'json',
-  'jwt',
-  'keyof',
-  'lazy',
-  'literal',
-  'looseObject',
-  'map',
-  'nan',
-  'nanoid',
-  'nativeEnum',
-  'never',
-  'nonoptional',
-  'null',
-  'nullable',
-  'nullish',
-  'number',
-  'object',
-  'optional',
-  'partialRecord',
-  'pipe',
-  'preprocess',
-  'promise',
-  'readonly',
-  'record',
-  'set',
-  'strictObject',
-  'string',
-  'stringbool',
-  'symbol',
-  'templateLiteral',
-  'transform',
-  'tuple',
-  'uint32',
-  'uint64',
-  'ulid',
-  'undefined',
-  'union',
-  'unknown',
-  'url',
-  'uuid',
-  'uuidv4',
-  'uuidv6',
-  'uuidv7',
-  'void',
-]);
-const ZOD_FACTORIES = new Set(['coerce', 'iso']);
 
 const onlyExpression = ({ body }) => {
   if (body.type !== 'BlockStatement') {
@@ -105,10 +25,6 @@ const onlyExpression = ({ body }) => {
 };
 
 const isStaticPath = node => node?.type === 'Literal' || (node?.type === 'TemplateLiteral' && node.expressions.length === 0);
-
-const keyName = (key, computed) => (!computed && key.type === 'Identifier' ? key.name : staticString(key));
-
-const memberName = member => keyName(member.property, member.computed);
 
 const destructuredKey = (identifier) => {
   const target = identifier.parent.type === 'AssignmentPattern' && identifier.parent.left === identifier ? identifier.parent : identifier;
@@ -134,32 +50,6 @@ const staticRedirect = (sourceCode, fn) => {
   }
   const { name } = call.callee;
   return REDIRECTS.has(importedFrom(sourceCode.getScope(call), name, NAVIGATION_MODULE) ?? name) ? call : null;
-};
-
-const zodRoot = (scope, name) => {
-  const specifier = zodImportSpecifier(scope, name);
-  if (specifier === null) {
-    return name === 'z' ? [] : null;
-  }
-  return specifier.type === 'ImportSpecifier' && importedName(specifier) !== 'z' ? [importedName(specifier)] : [];
-};
-
-const zodPath = (scope, node) => {
-  if (node.type === 'Identifier') {
-    return zodRoot(scope, node.name);
-  }
-  const parent = node.type === 'MemberExpression' ? zodPath(scope, node.object) : null;
-  const name = parent === null ? null : memberName(node);
-  return name === null ? null : [...parent, name];
-};
-
-const isZodConstructor = (scope, { callee }) => {
-  const path = zodPath(scope, callee) ?? [];
-  const [kind, member, ...rest] = path[0] === 'z' ? path.slice(1) : path;
-  if (rest.length > 0) {
-    return false;
-  }
-  return member === undefined ? ZOD_CONSTRUCTORS.has(kind) : ZOD_FACTORIES.has(kind);
 };
 
 const callerName = (scope, { callee }) => {

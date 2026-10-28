@@ -25,10 +25,12 @@ import requireProcedureOutput from './rules/require-procedure-output.cjs';
 import rhfFormContract from './rules/rhf-form-contract.cjs';
 import routeColocation from './rules/route-colocation.cjs';
 import routeGlobalScope from './rules/route-global-scope.cjs';
+import routeHandlerContract from './rules/route-handler-contract.cjs';
 import routeLoading from './rules/route-loading.cjs';
 import routeSegmentConfig from './rules/route-segment-config.cjs';
 import serviceExportsFunctions from './rules/service-exports-functions.cjs';
 import testColocation from './rules/test-colocation.cjs';
+import webhookReceiverContract from './rules/webhook-receiver-contract.cjs';
 
 const sourceFiles = '**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}';
 const typeScriptFiles = ['**/*.ts', '**/*.tsx'];
@@ -391,6 +393,32 @@ function formsConfigs(forms) {
   ];
 }
 
+const webhooksDefaults = {
+  routes: ['**/app/api/**/route.ts'],
+  webhooks: ['**/app/api/webhooks/**/route.ts'],
+};
+
+function webhooksConfigs(webhooks) {
+  if (!webhooks) {
+    return [];
+  }
+  const { routes, webhooks: receivers } = { ...webhooksDefaults, ...(typeof webhooks === 'object' ? webhooks : {}) };
+  return [
+    {
+      name: 'zoroskr/webhooks/routes',
+      files: [...routes, ...receivers],
+      ignores: productionIgnores,
+      rules: { 'local/route-handler-contract': 'error' },
+    },
+    {
+      name: 'zoroskr/webhooks/receivers',
+      files: receivers,
+      ignores: productionIgnores,
+      rules: { 'local/webhook-receiver-contract': 'error' },
+    },
+  ];
+}
+
 const typeScriptRules = {
   'ts/ban-ts-comment': 'error',
   'ts/consistent-type-definitions': ['error', 'type'],
@@ -502,6 +530,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     isomorphic = false,
     appRouter = false,
     forms = false,
+    webhooks = false,
     testSetupFiles = [],
     inferredReturnTypes = true,
     envFiles,
@@ -558,10 +587,12 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'rhf-form-contract': rhfFormContract,
             'route-colocation': routeColocation,
             'route-global-scope': routeGlobalScope,
+            'route-handler-contract': routeHandlerContract,
             'route-loading': routeLoading,
             'route-segment-config': routeSegmentConfig,
             'service-exports-functions': serviceExportsFunctions,
             'test-colocation': testColocation,
+            'webhook-receiver-contract': webhookReceiverContract,
           },
         },
       },
@@ -658,6 +689,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     ...isomorphicConfigs(isomorphic),
     ...appRouterConfigs(appRouter),
     ...formsConfigs(forms),
+    ...webhooksConfigs(webhooks),
     ...queryConfigs(query, productionRestrictedSyntax),
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),

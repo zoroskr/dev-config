@@ -33,13 +33,15 @@
     "./eslint/rules/rhf-form-contract": "./eslint/rules/rhf-form-contract.cjs",
     "./eslint/rules/route-colocation": "./eslint/rules/route-colocation.cjs",
     "./eslint/rules/route-global-scope": "./eslint/rules/route-global-scope.cjs",
+    "./eslint/rules/route-handler-contract": "./eslint/rules/route-handler-contract.cjs",
     "./eslint/rules/route-loading": "./eslint/rules/route-loading.cjs",
     "./eslint/rules/route-segment-config": "./eslint/rules/route-segment-config.cjs",
+    "./eslint/rules/service-exports-functions": "./eslint/rules/service-exports-functions.cjs",
     "./eslint/rules/test-colocation": "./eslint/rules/test-colocation.cjs",
+    "./eslint/rules/webhook-receiver-contract": "./eslint/rules/webhook-receiver-contract.cjs",
     "./tsconfig/strict.json": "./tsconfig/strict.json",
     "./commitlint": "./commitlint/index.js",
-    "./package.json": "./package.json",
-    "./eslint/rules/service-exports-functions": "./eslint/rules/service-exports-functions.cjs"
+    "./package.json": "./package.json"
   },
   "files": [
     "commitlint/index.js",
@@ -71,10 +73,12 @@
     "eslint/rules/rhf-form-contract.cjs",
     "eslint/rules/route-colocation.cjs",
     "eslint/rules/route-global-scope.cjs",
+    "eslint/rules/route-handler-contract.cjs",
     "eslint/rules/route-loading.cjs",
     "eslint/rules/route-segment-config.cjs",
     "eslint/rules/service-exports-functions.cjs",
     "eslint/rules/test-colocation.cjs",
+    "eslint/rules/webhook-receiver-contract.cjs",
     "eslint/rules/zod-binding.cjs",
     "tsconfig/strict.json"
   ],

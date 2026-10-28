@@ -45,6 +45,7 @@ The first argument takes these options; any other key is passed to `antfu()` (`n
 | `isomorphic`          | `false`  | Client/server boundary for shared code; pass `{ files, schemaFiles, ignores, forbiddenImports }`                     |
 | `appRouter`           | `false`  | Next.js App Router structure rules; pass `{ app, shared, gateCallees, serverCallerModules }`                         |
 | `forms`               | `false`  | React Hook Form + Zod form rules; pass `{ files, schemaFiles, constantsFiles }`                                      |
+| `webhooks`            | `false`  | Route handler and signed webhook receiver rules; pass `{ routes, webhooks }`                                         |
 | `testSetupFiles`      | `[]`     | Test setup files (globs) allowed to call `vi.mock`/`vi.doMock` outside test files                                    |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
@@ -200,6 +201,29 @@ Test files (`*.test`, `*.spec`, `*.stories`) and `scripts/**` are exempt. `useFo
   - Submit gates: `isValid` destructured or read from `formState` (`const { formState: { isValid } } = useForm()`, `const { isValid } = formState`, `form.formState.isValid`, `const formState = form.formState`) or from `useFormState(…)` (`react-hook-form`, destructured, held in a `const` or read directly), and from a typed parameter as above (`({ formState: { isValid } }: UseFormReturn<V>)`, `props.form.formState.isValid`, `formState: FormState<V>`); a `mode` option other than `'onSubmit'`; a `disabled` JSX attribute whose expression compares with `''` (`===`, `!==`, `==`, `!=`, nested callbacks included).
   - A `mutateAsync(…)` call (destructured from a mutation result, renamed included, or `mutation.mutateAsync(…)`) that is awaited, returned or the body of an expression-bodied arrow, directly or at the head of a `.then`/`.finally` chain, and not awaited inside the `try` block of a `try`/`catch` in the same function; `try`/`finally` alone, the `catch` block and nested callbacks do not count, and a call returned without `await` inside the `try` block is reported because its rejection escapes the `catch` (`try { return mutateAsync(v); } catch { … }`; `return await mutateAsync(v)` passes). A chain whose last call is `.catch(…)` passes. A call returned (or the expression body) of a callback passes when the callback is handed, directly or through `.map`, array literals and `Promise.all`/`allSettled`/`race`/`any` arguments, to a call that is awaited inside the `try` block of a `try`/`catch` or whose chain ends in `.catch(…)`: `try { await Promise.all(changes.map(change => updateRole(change))); } catch { … }`. An array iteration (`.map`, `.flatMap`, `.forEach`, `.filter`, `.find`, `.some`, `.every` and the like) only counts inside a `Promise` combinator: `await changes.map(…)` or an awaited array literal does not settle its promises and is reported. Without that outer `try`/`catch`, or with an `await` inside the callback, it is reported. `mutate` and other sources' `mutateAsync` (SWR) pass. Mutation results are detected as in `local/no-mutation-in-effect`.
 - `local/no-schema-default` with `{ form: true }` (`schemaFiles`): every `.default()`/`.prefault()`, with no `*InputSchema` exemption; set initial values in the defaults object. The `isomorphic` schema block keeps its exemption.
+
+### With `webhooks`
+
+Skill `webhook-receivers`. Pass `true` for the defaults or an object to override any key:
+
+```js
+export default zoroskr({ webhooks: { webhooks: ['**/app/api/webhooks/**/route.ts', '**/app/api/cron/**/route.ts'] } });
+```
+
+| Key        | Default                               | Use                                                      |
+| ---------- | ------------------------------------- | -------------------------------------------------------- |
+| `routes`   | `['**/app/api/**/route.ts']`          | Route handlers checked by `local/route-handler-contract` |
+| `webhooks` | `['**/app/api/webhooks/**/route.ts']` | Signed receivers, checked by both rules                  |
+
+Test files (`*.test`, `*.spec`, `*.stories`) and `scripts/**` are exempt.
+
+- `local/route-handler-contract` (`routes` and `webhooks`): schema-constructing Zod calls, detected like the app-router `.tsx` check (any default, namespace or named import from `zod`/`zod/*`, renamed or not); `.parse()`/`.parseAsync()` on any receiver except the global `JSON` and `Date` (computed `['parse']` included). `safeParse`, `safeParseAsync`, `JSON.parse` and `new URLSearchParams(await req.text())` pass.
+- `local/webhook-receiver-contract` (`webhooks`):
+  - `===`, `!==`, `==` and `!=` when a side is a header read (`req.headers.get(…)`, `headers().get(…)`, `(await headers()).get(…)`, also behind `??`/`||`, `+` or a template literal) or an `env` member whose name contains `secret`, `token` or `key` (`env.WEBHOOK_SECRET`, `process.env.API_KEY`, `env.provider.apiToken`), directly or through a `const` initialised from one (up to five hops, destructuring from `env` included). A comparison against a literal, `undefined` or an expression-free template passes, so `secret === undefined`, `secret === ''`, `typeof secret !== 'string'`, `status === 200`, `provided.length !== expected.length` and `req.headers.get('x-event') === 'message.created'` stay accepted.
+  - A `.json()` call on a function parameter (`await req.json()`) whose call chain has no `.catch(…)`; `await req.json().catch(() => null)` passes.
+  - `for`, `for…of`, `for…in`, `while`, `do…while` and `.forEach(…)`; `.map`/`.reduce` pass.
+
+Both are local rules, so the package, production and `restrictedSyntax` selectors keep firing on route files.
 
 ### Testing
 

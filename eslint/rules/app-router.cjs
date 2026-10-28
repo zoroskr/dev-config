@@ -242,6 +242,10 @@ const staticString = (node) => {
   return node?.type === 'TemplateLiteral' && node.expressions.length === 0 ? node.quasis[0].value.cooked : null;
 };
 
+const keyName = (key, computed) => (!computed && key.type === 'Identifier' ? key.name : staticString(key));
+
+const memberName = member => keyName(member.property, member.computed);
+
 const enclosingFunction = (sourceCode, node) => sourceCode.getAncestors(node).findLast(ancestor => FUNCTIONS.has(ancestor.type)) ?? null;
 
 const hasDirective = (program, value) => program.body.some(node => node.type === 'ExpressionStatement' && node.directive === value);
@@ -278,6 +282,8 @@ module.exports = {
   isGroup,
   isParam,
   isPrivate,
+  keyName,
+  memberName,
   nearestDynamicLayout,
   privateGlobalScope,
   resolveImport,
