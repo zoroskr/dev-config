@@ -331,10 +331,15 @@ function appRouterConfigs(appRouter) {
       ignores: productionIgnores,
       rules: {
         'local/route-colocation': 'error',
-        'local/route-global-scope': 'error',
         'local/route-loading': ['error', { gateCallees }],
         'local/route-segment-config': 'error',
       },
+    },
+    {
+      name: 'zoroskr/app-router/global-scope',
+      files: [...app, ...shared],
+      ignores: productionIgnores,
+      rules: { 'local/route-global-scope': 'error' },
     },
   ];
 }

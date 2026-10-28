@@ -1,12 +1,13 @@
-const { defaultExportFunction, hasDirective } = require('./app-router.cjs');
+const { defaultExportFunction, hasDirective, staticString } = require('./app-router.cjs');
+const { findVariable } = require('./process-env.cjs');
 const { matchesGlobs, relativeFilename, unwrap } = require('./query-hooks.cjs');
+const { importedName, zodImportSpecifier } = require('./zod-binding.cjs');
 
 const PAGE_FILE = /(?:^|\/)page\.tsx?$/u;
 const SERVER_ROUTE_FILE = /(?:^|\/)(?:page|layout|loading|template|default)\.tsx$/u;
 const REDIRECTS = new Set(['permanentRedirect', 'redirect']);
-const STATIC_PATHS = new Set(['Literal', 'TemplateLiteral']);
 const MODE_KEY = '/^(isEditing|isEditMode)$/';
-const CALLER_NAME = '/^(createCaller|createCallerFactory)$/';
+const CALLER_NAMES = new Set(['createCaller', 'createCallerFactory']);
 
 const onlyExpression = ({ body }) => {
   if (body.type !== 'BlockStatement') {
@@ -22,14 +23,62 @@ const onlyExpression = ({ body }) => {
   return statement.type === 'ReturnStatement' ? statement.argument : null;
 };
 
+const isStaticPath = node => node?.type === 'Literal' || (node?.type === 'TemplateLiteral' && node.expressions.length === 0);
+
 const staticRedirect = (fn) => {
   const call = unwrap(onlyExpression(fn));
   return call?.type === 'CallExpression'
     && call.callee.type === 'Identifier'
     && REDIRECTS.has(call.callee.name)
-    && STATIC_PATHS.has(call.arguments[0]?.type)
+    && isStaticPath(call.arguments[0])
     ? call
     : null;
+};
+
+const isZodBinding = (scope, node) => node.type === 'Identifier' && (node.name === 'z' || zodImportSpecifier(scope, node.name) !== null);
+
+const isZodCall = (scope, { callee }) => isZodBinding(scope, callee.type === 'MemberExpression' ? callee.object : callee);
+
+const memberName = (member) => {
+  if (member.computed) {
+    return staticString(member.property);
+  }
+  return member.property.type === 'Identifier' ? member.property.name : null;
+};
+
+const callerName = (scope, { callee }) => {
+  if (callee.type === 'MemberExpression') {
+    return memberName(callee);
+  }
+  if (callee.type !== 'Identifier') {
+    return null;
+  }
+  const [definition] = findVariable(scope, callee.name)?.defs ?? [];
+  return definition?.type === 'ImportBinding' && definition.node.type === 'ImportSpecifier' ? importedName(definition.node) : callee.name;
+};
+
+const isImportedBinding = (scope, node) => node.type === 'Identifier' && findVariable(scope, node.name)?.defs[0]?.type === 'ImportBinding';
+
+const moduleExports = (sourceCode, node) => {
+  if (node.type === 'ExportDefaultDeclaration') {
+    return [{ node, reexport: isImportedBinding(sourceCode.getScope(node), node.declaration), sourced: false }];
+  }
+  if (node.type !== 'ExportNamedDeclaration') {
+    return [];
+  }
+  if (node.declaration !== null) {
+    return [{ node, reexport: false, sourced: false }];
+  }
+  const scope = sourceCode.getScope(node);
+  const sourced = node.source !== null;
+  return node.specifiers.map(specifier => ({ node: specifier, reexport: sourced || isImportedBinding(scope, specifier.local), sourced }));
+};
+
+const reexportStubs = (sourceCode) => {
+  const exports = sourceCode.ast.body.flatMap(node => moduleExports(sourceCode, node));
+  return exports.length > 0 && exports.every(({ reexport }) => reexport)
+    ? exports.filter(({ sourced }) => !sourced).map(({ node }) => node)
+    : [];
 };
 
 module.exports = {
@@ -65,17 +114,26 @@ module.exports = {
     );
     if (inApp || matchesGlobs(context, shared)) {
       restrict(['ExportAllDeclaration', 'ExportNamedDeclaration[source]'], 'barrel');
+      visitors.push(['Program:exit', () => reexportStubs(sourceCode).forEach(node => context.report({ node, messageId: 'barrel' }))]);
     }
     if (inApp && filename.endsWith('.tsx')) {
-      restrict(['CallExpression[callee.object.name=\'z\']'], 'zodInTsx');
+      visitors.push(['CallExpression:exit', (node) => {
+        if (isZodCall(sourceCode.getScope(node), node)) {
+          context.report({ node, messageId: 'zodInTsx' });
+        }
+      }]);
       restrict(['VariableDeclarator[id.name=/[sS]chema$/]'], 'schemaInTsx');
-      restrict([`TSPropertySignature[key.name=${MODE_KEY}]`, `TSMethodSignature[key.name=${MODE_KEY}]`], 'modeProp');
+      restrict(['key.name', 'key.value'].flatMap(key => [`TSPropertySignature[${key}=${MODE_KEY}]`, `TSMethodSignature[${key}=${MODE_KEY}]`]), 'modeProp');
     }
     if (inApp && SERVER_ROUTE_FILE.test(filename) && !hasDirective(sourceCode.ast, 'use client')) {
       restrict(['TryStatement'], 'serverTry');
     }
     if (!matchesGlobs(context, serverCallerModules)) {
-      restrict([`CallExpression[callee.name=${CALLER_NAME}]`, `CallExpression[callee.property.name=${CALLER_NAME}]`], 'serverCaller');
+      visitors.push(['CallExpression', (node) => {
+        if (CALLER_NAMES.has(callerName(sourceCode.getScope(node), node))) {
+          context.report({ node, messageId: 'serverCaller' });
+        }
+      }]);
     }
     if (inApp && PAGE_FILE.test(filename)) {
       visitors.push(['Program', () => {

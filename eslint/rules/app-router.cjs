@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const { createRequire } = require('node:module');
 const path = require('node:path');
 const ts = require('typescript');
-const { findVariable } = require('./process-env.cjs');
+const { exportedName, findVariable } = require('./process-env.cjs');
 const { relativeFilename, unwrap } = require('./query-hooks.cjs');
 
 const CACHE_TTL_MS = 2000;
@@ -10,7 +10,7 @@ const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionDeclaration', 'Fu
 const TSCONFIG_NAMES = ['tsconfig.json', 'tsconfig.strict.json'];
 const LAYOUT_NAMES = ['layout.tsx', 'layout.ts'];
 const PAGE_NAMES = ['page.tsx', 'page.ts'];
-const DYNAMIC_EXPORT = /export\s+const\s+dynamic\s*=\s*(['"`])([^'"`]*)\1/u;
+const DYNAMIC_EXPORT = /export\s+const\s+dynamic\b[^=]*=\s*(['"`])([^'"`]*)\1/u;
 
 const cache = new Map();
 let cacheStart = 0;
@@ -195,9 +195,28 @@ const resolveFunction = (sourceCode, node) => {
   return FUNCTIONS.has(init?.type) ? init : null;
 };
 
+const defaultExportTarget = (program) => {
+  const declaration = program.body.find(node => node.type === 'ExportDefaultDeclaration')?.declaration;
+  if (declaration !== undefined) {
+    return declaration;
+  }
+  return program.body
+    .filter(node => node.type === 'ExportNamedDeclaration' && node.source === null)
+    .flatMap(node => node.specifiers)
+    .find(specifier => exportedName(specifier.exported) === 'default')
+    ?.local;
+};
+
 const defaultExportFunction = (sourceCode) => {
-  const declaration = sourceCode.ast.body.find(node => node.type === 'ExportDefaultDeclaration')?.declaration;
-  return declaration === undefined ? null : resolveFunction(sourceCode, declaration);
+  const target = defaultExportTarget(sourceCode.ast);
+  return target === undefined ? null : resolveFunction(sourceCode, target);
+};
+
+const staticString = (node) => {
+  if (node?.type === 'Literal' && typeof node.value === 'string') {
+    return node.value;
+  }
+  return node?.type === 'TemplateLiteral' && node.expressions.length === 0 ? node.quasis[0].value.cooked : null;
 };
 
 const enclosingFunction = (sourceCode, node) => sourceCode.getAncestors(node).findLast(ancestor => FUNCTIONS.has(ancestor.type)) ?? null;
@@ -228,4 +247,5 @@ module.exports = {
   privateGlobalScope,
   resolveImport,
   routeLocation,
+  staticString,
 };

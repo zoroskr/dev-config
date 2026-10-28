@@ -28,6 +28,10 @@ const HOOK_FOLDER = `A hook file (\`use*.ts\`, \`*.hook.ts\`) lives below a \`ho
 const componentsOnly = name => `Only component files (\`.tsx\` and their tests) go below \`components/\`; move \`${name}\` to the feature \`schemas/\`, \`utils/\`, \`constants/\` or \`hooks/\` folder. ${SKILL}`;
 const nestedUnit = name => `Put \`${name}\` in a unit folder directly inside its category folder; a child component gets a sibling folder in \`components/\`, never a folder inside its parent. ${SKILL}`;
 const unitFolder = (name, unit) => `Put \`${name}\` in its own \`${unit}/\` folder inside its category folder (\`components/Foo/Foo.tsx\`, \`utils/NormalizeEmail/normalize-email.util.ts\`). ${SKILL}`;
+const routeSegment = name => `Do not put \`${name}\` in a route segment; route segments hold only route files, so move it into a unit folder of the feature \`components/\`, \`utils/\`, \`schemas/\`, \`constants/\` or \`hooks/\` folder. ${SKILL}`;
+const pluralSuffix = name => `Use the singular kind suffix in \`${name}\` (\`.schema.ts\`, \`.util.ts\`, \`.hook.ts\`). ${SKILL}`;
+const hookName = name => `Name the hook file \`${name}\` in camelCase starting with \`use\` (\`useOrders.ts\`, \`useOrders.hook.ts\`). ${SKILL}`;
+const kebabName = name => `Name \`${name}\` in kebab-case before its kind suffix (\`normalize-email.util.ts\`). ${SKILL}`;
 const genericName = name => `Do not use the generic file name \`${name}\`; name the unit by its concern (\`utils/NormalizeEmail/normalize-email.util.ts\`). ${SKILL}`;
 const ZOD_TSX = `Do not build Zod schemas in a \`.tsx\` file; move the schema to the feature \`schemas/\` folder. ${SKILL}`;
 const SCHEMA_TSX = `Do not declare a \`*Schema\` const in a \`.tsx\` file; move it to the feature \`schemas/\` folder. ${SKILL}`;
@@ -79,11 +83,13 @@ async function lint(file, code, settings) {
 }
 
 const value = 'export const value = 1;\n';
+const returnsA = 'export default function Page() {\n  return a;\n}\n';
 const component = name => `export function ${name}() {\n  return <span />;\n}\n`;
 const page = body => `export default async function Page() {\n${body}}\n`;
 const tsconfig = JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@/*': ['./src/*'] } } });
 const gate = { appRouter: { gateCallees: ['requirePermission'] } };
 const gatedPage = page('  await requirePermission({ resource: \'orders\', action: \'read\' });\n  return <OrdersContainer />;\n');
+const leadsPage = { 'src/app/leads/page.tsx': '' };
 const ordersTree = {
   'src/app/orders/page.tsx': page('  return null;\n'),
   'src/app/orders/details/page.tsx': page('  return null;\n'),
@@ -104,7 +110,7 @@ const rejected = [
   ['F3', 'src/app/orders/lead-status.constant.ts', value, [CONSTANTS_FOLDER]],
   ['F3', 'src/app/orders/useOrders.ts', value, [HOOK_FOLDER]],
   ['F3', 'src/app/orders/useOrders.tsx', value, [HOOK_FOLDER]],
-  ['F3', 'src/app/orders/orders.hook.ts', value, [HOOK_FOLDER]],
+  ['F3', 'src/app/orders/orders.hook.ts', value, [HOOK_FOLDER, hookName('orders.hook.ts')]],
   ['F3', 'src/app/orders/useOrders.test.ts', value, [HOOK_FOLDER]],
   ['F3', 'src/app/orders/components/Foo/foo.schema.ts', value, [SCHEMA_FOLDER, componentsOnly('foo.schema.ts')]],
   ['F3', 'src/app/orders/components/Foo/schemas/LeadForm/lead-form.schema.ts', value, [componentsOnly('lead-form.schema.ts')]],
@@ -129,25 +135,55 @@ const rejected = [
   ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import { z } from \'zod\';\n\nexport const LeadForm = () => z.string().parse(1);\n', [ZOD_TSX]],
   ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'const formSchema = leadSchema.extend({});\n\nexport const LeadForm = () => formSchema;\n', [SCHEMA_TSX]],
   ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'const schema = leadSchema;\n\nexport const LeadForm = () => schema;\n', [SCHEMA_TSX]],
-  ['F5', 'src/app/orders/page.tsx', 'import { a } from \'../users/(global)/utils/A/a.util\';\n\nexport default a;\n', [globalScope('../users/(global)/utils/A/a.util', 'src/app/users')], { tree: { 'tsconfig.json': tsconfig } }],
-  ['F5', 'src/app/orders/page.tsx', 'import { a } from \'@/app/users/(global)/utils/A/a.util\';\n\nexport default a;\n', [globalScope('@/app/users/(global)/utils/A/a.util', 'src/app/users')], { tree: { 'tsconfig.json': tsconfig } }],
+  ['F5', 'src/app/orders/page.tsx', `import { a } from '../users/(global)/utils/A/a.util';\n\n${returnsA}`, [globalScope('../users/(global)/utils/A/a.util', 'src/app/users')], { tree: { 'tsconfig.json': tsconfig } }],
+  ['F5', 'src/app/orders/page.tsx', `import { a } from '@/app/users/(global)/utils/A/a.util';\n\n${returnsA}`, [globalScope('@/app/users/(global)/utils/A/a.util', 'src/app/users')], { tree: { 'tsconfig.json': tsconfig } }],
   ['F5', 'src/app/orders/page.tsx', 'import type { A } from \'@/app/users/(global)/a\';\n\nexport default function Page(props: A) {\n  return props;\n}\n', [globalScope('@/app/users/(global)/a', 'src/app/users')], { tree: { 'tsconfig.json': tsconfig } }],
-  ['F5', 'src/app/orders/page.tsx', 'import { a } from \'@app/users/(global)/a\';\n\nexport default a;\n', [globalScope('@app/users/(global)/a', 'src/app/users')], {
+  ['F5', 'src/app/orders/page.tsx', `import { a } from '@app/users/(global)/a';\n\n${returnsA}`, [globalScope('@app/users/(global)/a', 'src/app/users')], {
     tree: {
       'tsconfig.base.json': '{\n  // shared\n  "compilerOptions": { "paths": { "@app/*": ["./src/app/*"] } },\n}\n',
       'tsconfig.strict.json': JSON.stringify({ extends: './tsconfig.base.json' }),
     },
   }],
-  ['F5', 'src/app/orders/details/page.tsx', 'import { a } from \'../../users/details/(global)/a\';\n\nexport default a;\n', [globalScope('../../users/details/(global)/a', 'src/app/users/details')]],
+  ['F5', 'src/app/orders/details/page.tsx', `import { a } from '../../users/details/(global)/a';\n\n${returnsA}`, [globalScope('../../users/details/(global)/a', 'src/app/users/details')]],
+  ['F2', 'src/app/orders/orders.ts', 'import { Orders } from \'./orders.repository\';\n\nexport { Orders };\n', [BARREL]],
+  ['F2', 'src/app/orders/page.tsx', 'import OrdersPage from \'./OrdersPage\';\n\nexport default OrdersPage;\n', [BARREL]],
+  ['F2', 'src/components/Button/Button.tsx', 'import { ButtonBase } from \'./ButtonBase\';\n\nexport { ButtonBase as default };\n', [BARREL]],
+  ['F2', 'src/app/orders/orders.ts', 'import type { Order } from \'./order.schema\';\nimport { load } from \'./load\';\n\nexport type { Order };\nexport { load };\n', [BARREL, BARREL]],
+  ['F3', 'src/app/orders/components/Parent/components/Child/Child.tsx', component('Child'), [nestedUnit('Child.tsx')]],
+  ['F3', 'src/app/orders/utils/Parent/utils/Child/child.util.ts', value, [nestedUnit('child.util.ts')]],
+  ['F3', 'src/app/leads/LeadTable.tsx', component('LeadTable'), [routeSegment('LeadTable.tsx')], { tree: leadsPage }],
+  ['F3', 'src/app/leads/LeadRow/LeadRow.tsx', component('LeadRow'), [routeSegment('LeadRow.tsx')], { tree: leadsPage }],
+  ['F3', 'src/app/leads/leads.ts', value, [routeSegment('leads.ts')], { tree: { 'src/app/leads/layout.tsx': '' } }],
+  ['F3', 'src/app/leads/(index)/LeadTable.tsx', component('LeadTable'), [routeSegment('LeadTable.tsx')], { tree: { 'src/app/leads/(index)/page.tsx': '' } }],
+  ['F3', 'src/app/api/leads/handler.ts', value, [routeSegment('handler.ts')], { tree: { 'src/app/api/leads/route.ts': '' } }],
+  ['F3', 'src/app/leads/[id]/LeadRow/LeadRow.test.tsx', value, [routeSegment('LeadRow.test.tsx')], { tree: { 'src/app/leads/[id]/not-found.tsx': '' } }],
+  ['F3', 'src/app/orders/schemas/Lead/lead.schemas.ts', value, [pluralSuffix('lead.schemas.ts')]],
+  ['F3', 'src/app/orders/utils/Format/format.utils.ts', value, [pluralSuffix('format.utils.ts')]],
+  ['F3', 'src/app/orders/hooks/Orders/orders.hooks.ts', value, [pluralSuffix('orders.hooks.ts')]],
+  ['F3', 'src/app/orders/utils/NormalizeEmail/normalizeEmail.util.ts', value, [kebabName('normalizeEmail.util.ts')]],
+  ['F3', 'src/app/orders/schemas/LeadForm/LeadForm.schema.ts', value, [kebabName('LeadForm.schema.ts')]],
+  ['F3', 'src/app/orders/schemas/LeadForm/LeadForm.schema.test.ts', value, [kebabName('LeadForm.schema.test.ts')]],
+  ['F3', 'src/app/orders/constants/LeadStatus/leadStatus.constants.ts', value, [kebabName('leadStatus.constants.ts')]],
+  ['F3', 'src/app/orders/hooks/Orders/Orders.hook.ts', value, [hookName('Orders.hook.ts')]],
+  ['F3', 'src/app/orders/hooks/Orders/orders.hook.ts', value, [hookName('orders.hook.ts')]],
+  ['F3', 'src/app/orders/hooks/UseOrders/use-orders.hook.ts', value, [hookName('use-orders.hook.ts')]],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import { z as zod } from \'zod\';\n\nexport const LeadForm = () => zod.string();\n', [ZOD_TSX]],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import * as zod from \'zod\';\n\nexport const LeadForm = () => zod[\'object\']({});\n', [ZOD_TSX]],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import zod from \'zod\';\n\nexport const LeadForm = () => zod.number().parse(1);\n', [ZOD_TSX]],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import { object, string } from \'zod/v4\';\n\nexport const LeadForm = () => object({ name: string() });\n', [ZOD_TSX, ZOD_TSX]],
+  ['F5', 'src/shared/orders/orders.util.ts', 'import { a } from \'@/app/users/(global)/a\';\n\nexport const b = a;\n', [globalScope('@/app/users/(global)/a', 'src/app/users')], { tree: { 'tsconfig.json': tsconfig } }],
+  ['F5', 'src/components/Nav/Nav.tsx', 'import { a } from \'../../app/orders/(global)/a\';\n\nexport const Nav = () => a;\n', [globalScope('../../app/orders/(global)/a', 'src/app/orders')]],
   ['F6', 'src/app/old/page.tsx', 'import { redirect } from \'next/navigation\';\n\nexport default function Page() {\n  redirect(\'/new\');\n}\n', [STATIC_REDIRECT]],
   ['F6', 'src/app/old/page.tsx', 'import { redirect } from \'next/navigation\';\n\nexport default async function Page() {\n  return redirect(\'/new\');\n}\n', [STATIC_REDIRECT]],
   ['F6', 'src/app/old/page.ts', 'import { permanentRedirect } from \'next/navigation\';\n\nconst Page = () => permanentRedirect(`/new`);\n\nexport default Page;\n', [STATIC_REDIRECT]],
-  ['F6', 'src/app/old/[id]/page.tsx', `import { redirect } from 'next/navigation';\n\nexport default async function Page({ params }: Props) {\n  redirect(\`/new/\${(await params).id}\`);\n}\n`, [STATIC_REDIRECT]],
   ['F6', 'src/app/old/page.tsx', 'import { redirect } from \'next/navigation\';\n\nfunction Page() {\n  redirect(\'/new\');\n}\n\nexport default Page;\n', [STATIC_REDIRECT]],
   ['F6', 'src/app/old/page.tsx', 'import { redirect } from \'next/navigation\';\n\nconst Page = async () => {\n  redirect(\'/new\');\n};\n\nexport default Page;\n', [STATIC_REDIRECT]],
   ['F7', 'src/app/dashboard/orders/page.tsx', 'export const dynamic = \'force-dynamic\';\n\nexport default function Page() {\n  return null;\n}\n', [repeatedDynamic('force-dynamic', 'src/app/dashboard/layout.tsx')], { tree: { 'src/app/dashboard/layout.tsx': 'export const dynamic = \'force-dynamic\';\n' } }],
   ['F7', 'src/app/dashboard/page.tsx', 'export const dynamic = \'force-dynamic\';\n', [repeatedDynamic('force-dynamic', 'src/app/dashboard/layout.tsx')], { tree: { 'src/app/dashboard/layout.tsx': 'export const dynamic = "force-dynamic";\n' } }],
   ['F7', 'src/app/dashboard/orders/layout.tsx', 'export const dynamic = \'force-dynamic\';\n', [repeatedDynamic('force-dynamic', 'src/app/layout.ts')], { tree: { 'src/app/layout.ts': 'export const dynamic = \'force-dynamic\';\n' } }],
+  ['F7', 'src/app/dashboard/orders/page.tsx', 'export const dynamic = \'force-dynamic\';\n', [repeatedDynamic('force-dynamic', 'src/app/dashboard/layout.tsx')], { tree: { 'src/app/dashboard/layout.tsx': 'export const dynamic: \'force-dynamic\' = \'force-dynamic\';\n' } }],
+  ['F7', 'src/app/dashboard/orders/page.tsx', 'export const dynamic = \'force-dynamic\' as const;\n', [repeatedDynamic('force-dynamic', 'src/app/dashboard/layout.tsx')], { tree: { 'src/app/dashboard/layout.tsx': 'export const dynamic: Dynamic = \'force-dynamic\' satisfies Dynamic;\n' } }],
+  ['F7', 'src/app/dashboard/orders/layout.tsx', 'export const dynamic: Dynamic = \'force-dynamic\' satisfies Dynamic;\n', [repeatedDynamic('force-dynamic', 'src/app/layout.tsx')], { tree: { 'src/app/layout.tsx': 'export const dynamic = \'force-dynamic\' as const;\n' } }],
   ['F8', 'src/app/orders/page.tsx', page('  try {\n    await load();\n  } catch {\n    return null;\n  }\n  return null;\n'), [SERVER_TRY]],
   ['F8', 'src/app/orders/layout.tsx', page('  try {\n    await load();\n  } finally {\n    done();\n  }\n  return null;\n'), [SERVER_TRY]],
   ['F8', 'src/app/orders/default.tsx', 'export default function Default() {\n  try {\n    return read();\n  } catch {\n    return null;\n  }\n}\n', [SERVER_TRY]],
@@ -164,6 +200,16 @@ const rejected = [
   ['F11', 'src/app/components/Nav/Nav.tsx', component('Nav'), [floatingComponents('src/app')], { tree: { 'src/app/dashboard/page.ts': '' } }],
   ['F11', 'src/app/orders/[id]/components/Foo/Foo.tsx', component('Foo'), [floatingComponents('src/app/orders/[id]')], { tree: { 'src/app/orders/[id]/edit/page.tsx': '' } }],
   ['F11', 'src/app/orders/page.tsx', page('  return null;\n'), [indexPage('src/app/orders')], { tree: { 'src/app/orders/[id]/page.tsx': '' } }],
+  ['F9', 'src/app/orders/page.tsx', 'async function Page() {\n  await requirePermission();\n  return null;\n}\n\nexport { Page as default };\n', [missingLoading('requirePermission')], { options: gate }],
+  ['F10', 'src/server/caller.ts', 'import { createCallerFactory as makeFactory } from \'@trpc/server\';\n\nexport const factory = makeFactory(appRouter);\n', [SERVER_CALLER]],
+  ['F10', 'src/server/caller.ts', 'export const caller = appRouter[\'createCaller\']({});\n', [SERVER_CALLER]],
+  ['F11', 'src/app/orders/page.tsx', page('  return null;\n'), [indexPage('src/app/orders')], { tree: { 'src/app/orders/details/(index)/page.tsx': '' } }],
+  ['F11', 'src/app/orders/page.tsx', page('  return null;\n'), [indexPage('src/app/orders')], { tree: { 'src/app/orders/details/(a)/(b)/page.tsx': '' } }],
+  ['F11', 'src/app/orders/page.tsx', page('  return null;\n'), [indexPage('src/app/orders')], { tree: { 'src/app/orders/(lists)/active/page.tsx': '' } }],
+  ['F11', 'src/app/orders/components/Foo/Foo.tsx', component('Foo'), [floatingComponents('src/app/orders')], { tree: { 'src/app/orders/details/(index)/page.tsx': '' } }],
+  ['F11', 'src/app/orders/components/Foo/Foo.tsx', component('Foo'), [floatingComponents('src/app/orders')], { tree: { 'src/app/orders/(lists)/active/page.tsx': '' } }],
+  ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { \'isEditing\': boolean };\n\nexport function Foo(props: Props) {\n  return props.isEditing ? <span /> : null;\n}\n', [MODE_PROP]],
+  ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { \'isEditMode\'(): boolean };\n\nexport function Foo(props: Props) {\n  return props.isEditMode() ? <span /> : null;\n}\n', [MODE_PROP]],
   ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { isEditing: boolean };\n\nexport function Foo({ isEditing }: Props) {\n  return isEditing ? <span /> : null;\n}\n', [MODE_PROP]],
   ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { isEditMode(): boolean };\n\nexport function Foo({ isEditMode }: Props) {\n  return isEditMode() ? <span /> : null;\n}\n', [MODE_PROP]],
   ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { readonly isEditMode?: boolean };\n\nexport function Foo(props: Props) {\n  return props.isEditMode === true ? <span /> : null;\n}\n', [MODE_PROP]],
@@ -177,15 +223,34 @@ for (const [row, file, code, expected, settings] of rejected) {
 
 const accepted = [
   ['F2', 'src/lib/index.ts', 'export * from \'./a\';\n'],
+  ['F2', 'src/app/orders/orders.ts', 'import { load } from \'./load\';\n\nexport const orders = load();\n'],
+  ['F2', 'src/app/orders/orders.ts', 'import { load } from \'./load\';\n\nfunction orders() {\n  return load();\n}\n\nexport { orders };\nexport default orders;\n'],
+  ['F3', 'src/app/leads/page.tsx', page('  return null;\n'), { tree: leadsPage }],
+  ['F3', 'src/app/leads/page.test.tsx', value, { tree: leadsPage }],
+  ['F3', 'src/app/leads/opengraph-image.tsx', 'export default function Image() {\n  return null;\n}\n', { tree: leadsPage }],
+  ['F3', 'src/app/leads/components/LeadRow/LeadRow.tsx', component('LeadRow'), { tree: leadsPage }],
+  ['F3', 'src/app/leads/(global)/components/Nav/Nav.tsx', component('Nav'), { tree: leadsPage }],
+  ['F3', 'src/app/leads/(global)/providers/server.ts', value, { tree: leadsPage }],
+  ['F3', 'src/app/leads/(global)/Nav/Nav.tsx', component('Nav'), { tree: { 'src/app/leads/layout.tsx': '' } }],
+  ['F3', 'src/app/leads/LeadRow/LeadRow.tsx', component('LeadRow')],
+  ['F3', 'src/app/orders/utils/Base64Url/base64-url.util.ts', value],
+  ['F4', 'src/app/orders/components/LeadForm/LeadForm.tsx', 'import { object } from \'./object\';\n\nexport const LeadForm = () => object({});\n'],
+  ['F5', 'src/shared/orders/orders.test.ts', 'import { a } from \'../../app/users/(global)/a\';\n\ntest(\'x\', () => a);\n'],
+  ['F5', 'src/shared/orders/orders.util.ts', 'import { a } from \'@/shared/(global)/a\';\n\nexport const b = a;\n', { tree: { 'tsconfig.json': tsconfig } }],
+  ['F6', 'src/app/old/[id]/page.tsx', `import { redirect } from 'next/navigation';\n\nexport default async function Page({ params }: Props) {\n  redirect(\`/new/\${(await params).id}\`);\n}\n`],
+  ['F7', 'src/app/dashboard/orders/page.tsx', 'export const dynamic = \'force-dynamic\' as const;\n', { tree: { 'src/app/dashboard/layout.tsx': 'export const dynamic: Dynamic = \'force-static\';\n' } }],
+  ['F10', 'src/server/caller.ts', 'import { makeFactory } from \'./factory\';\n\nexport const factory = makeFactory(appRouter);\n'],
+  ['F11', 'src/app/orders/[id]/page.tsx', page('  return null;\n'), { tree: { 'src/app/orders/[id]/edit/(index)/page.tsx': '' } }],
+  ['F11', 'src/app/orders/(index)/page.tsx', page('  return null;\n'), { tree: { 'src/app/orders/(lists)/active/page.tsx': '' } }],
   ['F2', 'src/app/orders/orders.ts', value],
   ['F2', 'src/app/orders/orders.test.ts', 'export * from \'./orders.repository\';\n'],
   ['F3', 'src/app/orders/utils/NormalizeEmail/normalize-email.util.ts', value],
   ['F3', 'src/app/orders/utils/NormalizeEmail/normalize-email.test.ts', value],
   ['F3', 'src/app/orders/schemas/LeadForm/lead-form.schema.ts', value],
-  ['F3', 'src/app/orders/schemas/LeadForm/LeadForm.schema.test.ts', value],
+  ['F3', 'src/app/orders/schemas/LeadForm/lead-form.schema.test.ts', value],
   ['F3', 'src/app/orders/constants/LeadStatus/lead-status.constants.ts', value],
   ['F3', 'src/app/orders/hooks/UseOrders/useOrders.ts', value],
-  ['F3', 'src/app/orders/hooks/Orders/orders.hook.ts', value],
+  ['F3', 'src/app/orders/hooks/UseCurrentUser/useCurrentUser.hook.ts', value],
   ['F3', 'src/app/orders/components/Foo/Foo.tsx', component('Foo')],
   ['F3', 'src/app/orders/components/Foo/Foo.test.tsx', value],
   ['F3', 'src/app/orders/components/Foo/Foo.stories.tsx', value],
@@ -201,7 +266,7 @@ const accepted = [
   ['F5', 'src/app/orders/details/page.tsx', 'import { a } from \'../(global)/a\';\nimport { b } from \'@/app/orders/(global)/b\';\n\nexport default [a, b];\n', { tree: { 'tsconfig.json': tsconfig } }],
   ['F5', 'src/app/orders/(global)/components/Nav/Nav.tsx', 'import { a } from \'../../a\';\n\nexport const Nav = () => a;\n'],
   ['F5', 'src/app/orders/page.test.tsx', 'import { a } from \'../users/(global)/a\';\n\ntest(\'x\', () => a);\n'],
-  ['F5', 'src/app/orders/page.tsx', 'import { a } from \'@/app/users/(global)/a\';\n\nexport default a;\n'],
+  ['F5', 'src/app/orders/page.tsx', `import { a } from '@/app/users/(global)/a';\n\n${returnsA}`],
   ['F6', 'src/app/old/page.tsx', 'import { redirect } from \'next/navigation\';\n\nexport default async function Page() {\n  const user = await getUser();\n  redirect(user.home);\n}\n'],
   ['F6', 'src/app/old/page.tsx', 'import { redirect } from \'next/navigation\';\n\nexport default function Page() {\n  redirect(home);\n}\n'],
   ['F6', 'src/app/old/layout.tsx', 'import { redirect } from \'next/navigation\';\n\nexport default function Layout() {\n  redirect(\'/new\');\n}\n'],
@@ -225,7 +290,7 @@ const accepted = [
   ['F11', 'src/app/orders/(index)/components/Foo/Foo.tsx', component('Foo'), { tree: { 'src/app/orders/(index)/page.tsx': '', 'src/app/orders/details/page.tsx': '' } }],
   ['F11', 'src/app/orders/(lists)/components/Foo/Foo.tsx', component('Foo'), { tree: { 'src/app/orders/(lists)/active/page.tsx': '' } }],
   ['F11', 'src/app/users/components/Foo/Foo.tsx', component('Foo'), { tree: { 'src/app/users/page.tsx': '', 'src/app/users/utils/A/a.util.ts': '' } }],
-  ['F11', 'src/app/users/page.tsx', page('  return null;\n'), { tree: { 'src/app/users/components/Foo/Foo.tsx': '', 'src/app/users/(global)/page.tsx': '', 'src/app/users/(lists)/active/page.tsx': '', 'src/app/users/_parts/page.tsx': '', 'src/app/users/@modal/page.tsx': '' } }],
+  ['F11', 'src/app/users/page.tsx', page('  return null;\n'), { tree: { 'src/app/users/components/Foo/Foo.tsx': '', 'src/app/users/(global)/page.tsx': '', 'src/app/users/_parts/page.tsx': '', 'src/app/users/@modal/page.tsx': '' } }],
   ['F11', 'src/app/page.tsx', page('  return null;\n'), { tree: { 'src/app/dashboard/page.tsx': '' } }],
   ['F11', 'src/app/orders/components/Foo/Foo.test.tsx', value, { tree: ordersTree }],
   ['F16', 'src/app/orders/components/Foo/Foo.tsx', 'type Props = { isOpen: boolean };\n\nexport function Foo({ isOpen }: Props) {\n  return isOpen ? <span /> : null;\n}\n'],

@@ -1,14 +1,8 @@
 const path = require('node:path');
-const { displayPath, nearestDynamicLayout, routeLocation } = require('./app-router.cjs');
+const { displayPath, nearestDynamicLayout, routeLocation, staticString } = require('./app-router.cjs');
+const { unwrap } = require('./query-hooks.cjs');
 
 const ROUTE_FILE = /^(page|layout)\.tsx?$/u;
-
-const literalValue = (node) => {
-  if (node?.type === 'Literal' && typeof node.value === 'string') {
-    return node.value;
-  }
-  return node?.type === 'TemplateLiteral' && node.expressions.length === 0 ? node.quasis[0].value.cooked : null;
-};
 
 module.exports = {
   meta: {
@@ -28,7 +22,7 @@ module.exports = {
     const start = kind === 'layout' ? path.posix.dirname(directory) : directory;
     return {
       'ExportNamedDeclaration > VariableDeclaration[kind=\'const\'] > VariableDeclarator[id.name=\'dynamic\']': (node) => {
-        const value = literalValue(node.init);
+        const value = staticString(unwrap(node.init));
         const ancestor = value === null ? null : nearestDynamicLayout(start, location.appRoot);
         if (ancestor?.value === value) {
           context.report({ node, messageId: 'repeatedDynamic', data: { value, layout: displayPath(context, ancestor.file) } });
