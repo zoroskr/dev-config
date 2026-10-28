@@ -40,6 +40,7 @@ const routeRows = [
   [handler('  const body = leadSchema.parse(await req.text());\n  void body;\n'), [PARSE]],
   [handler('  const body = await leadSchema.parseAsync(await req.text());\n  void body;\n'), [PARSE]],
   [handler('  const body = leadSchema[\'parse\'](await req.text());\n  void body;\n'), [PARSE]],
+  [handler('  const qs = leadSchema;\n  const body = qs.parse(await req.text());\n  void body;\n'), [PARSE]],
 ];
 
 const webhookRows = [
@@ -52,9 +53,27 @@ const webhookRows = [
   [handler('  const token = env.provider.apiToken;\n  if (token != provided) {\n    return reject();\n  }\n'), [COMPARE]],
   [`import { headers } from 'next/headers';\n\n${handler('  if ((await headers()).get(\'x-signature\') === digest) {\n    return accept();\n  }\n')}`, [COMPARE]],
   [handler('  if ((req.headers.get(\'x-signature\') ?? \'\') === digest) {\n    return accept();\n  }\n'), [COMPARE]],
+  [handler('  const hs = req.headers;\n  if (hs.get(\'x\') === s) {\n    return accept();\n  }\n'), [COMPARE]],
+  [`import { headers } from 'next/headers';\n\n${handler('  const list = await headers();\n  if (list.get(\'x-sig\') !== expected) {\n    return reject();\n  }\n')}`, [COMPARE]],
+  [handler('  if (req.headers.get(\'x-signature\')?.slice(7) === expected) {\n    return accept();\n  }\n'), [COMPARE]],
+  [handler('  if (req.headers.get(\'authorization\')?.substring(7) !== expected) {\n    return reject();\n  }\n'), [COMPARE]],
+  [handler('  if (req.headers.get(\'x-signature\')?.trim() === expected) {\n    return accept();\n  }\n'), [COMPARE]],
+  [handler('  if (req.headers.get(\'authorization\')?.replace(\'Bearer \', \'\') === expected) {\n    return accept();\n  }\n'), [COMPARE]],
+  [handler('  if (req.headers.get(\'x-signature\')?.toLowerCase() === expected) {\n    return accept();\n  }\n'), [COMPARE]],
+  [handler('  if (req.headers.get(\'authorization\')?.split(\' \')[1] === expected) {\n    return accept();\n  }\n'), [COMPARE]],
+  [handler('  const token = req.headers.get(\'authorization\')?.split(\' \')[1];\n  if (token !== expected) {\n    return reject();\n  }\n'), [COMPARE]],
+  [handler('  switch (req.headers.get(\'authorization\')) {\n    case expected:\n      return accept();\n  }\n'), [COMPARE]],
+  [handler('  switch (env.WEBHOOK_SECRET) {\n    case \'\':\n      return reject();\n    case provided:\n      return accept();\n  }\n'), [COMPARE]],
+  [`import { WEBHOOK_SECRET } from './constants';\n\n${handler('  if (req.headers.get(\'x-secret\') !== WEBHOOK_SECRET) {\n    return reject();\n  }\n')}`, [COMPARE]],
+  [`import { expectedEvent } from './constants';\n\n${handler('  if (req.headers.get(\'x-event\') !== expectedEvent) {\n    return reject();\n  }\n')}`, [COMPARE]],
+  [`const API_TOKEN = 'abc';\n\n${handler('  if (req.headers.get(\'x-token\') !== API_TOKEN) {\n    return reject();\n  }\n')}`, [COMPARE]],
+  [`const EXPECTED = digest();\n\n${handler('  if (req.headers.get(\'x-signature\') !== EXPECTED) {\n    return reject();\n  }\n')}`, [COMPARE]],
+  [`let EVENT = 'message.created';\n\n${handler('  if (req.headers.get(\'x-event\') !== EVENT) {\n    return reject();\n  }\n')}`, [COMPARE]],
+  [handler('  const EVENT = \'message.created\';\n  if (req.headers.get(\'x-event\') !== EVENT) {\n    return reject();\n  }\n'), [COMPARE]],
   [handler('  const body: unknown = await req.json();\n  void body;\n'), [JSON_BODY]],
   ['export async function POST(request: Request) {\n  const body = await request.json();\n  return Response.json(body);\n}\n', [JSON_BODY]],
   [handler('  void req.json().then(capture);\n'), [JSON_BODY]],
+  [handler('  const body: unknown = await req.clone().json();\n  void body;\n'), [JSON_BODY]],
   [handler('  for (const item of payload.items) {\n    void item;\n  }\n'), [LOOP]],
   [handler('  for (let index = 0; index < payload.items.length; index += 1) {\n    void index;\n  }\n'), [LOOP]],
   [handler('  for (const key in payload) {\n    void key;\n  }\n'), [LOOP]],
@@ -74,6 +93,10 @@ const routeAccepted = [
   handler('  const parsed = await leadSchema.safeParseAsync(await req.text());\n  void parsed;\n'),
   handler('  const sentAt = Date.parse(when);\n  const params = new URLSearchParams(await req.text());\n  void [sentAt, params.get(\'From\')];\n'),
   handler('  const body: unknown = await req.json().catch(() => null);\n  void body;\n'),
+  handler('  const target = URL.parse(await req.text());\n  void target;\n'),
+  `import qs from 'qs';\n\n${handler('  const query = qs.parse(await req.text());\n  void query;\n')}`,
+  `import querystring from 'node:querystring';\n\n${handler('  const query = querystring.parse(await req.text());\n  void query;\n')}`,
+  `import * as querystring from 'querystring';\n\n${handler('  const query = querystring.parse(await req.text());\n  void query;\n')}`,
 ];
 
 const webhookAccepted = [
@@ -83,6 +106,11 @@ const webhookAccepted = [
   handler('  const provided = Buffer.from(req.headers.get(\'x-signature\') ?? \'\');\n  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {\n    return reject();\n  }\n'),
   handler('  const secret = env.WEBHOOK_SECRET;\n  if (secret.length === 0) {\n    return reject();\n  }\n'),
   handler('  if (req.headers.get(\'x-event\') === \'message.created\') {\n    return accept();\n  }\n'),
+  `const EVENT = 'message.created';\n\n${handler('  if (req.headers.get(\'x-event\') === EVENT) {\n    return accept();\n  }\n')}`,
+  `import { EVENT_CREATED } from './constants';\n\n${handler('  if (req.headers.get(\'x-event\') !== EVENT_CREATED) {\n    return reject();\n  }\n')}`,
+  `const EVENT = 'message.created';\n\n${handler('  switch (req.headers.get(\'x-event\')) {\n    case \'message.updated\':\n    case EVENT:\n      return accept();\n    default:\n      return reject();\n  }\n')}`,
+  handler('  if (req.headers.get(\'authorization\')?.slice(0, 7) === \'Bearer \') {\n    return accept();\n  }\n'),
+  handler('  const body: unknown = await req.clone().json().catch(() => null);\n  void body;\n'),
   handler('  const names = payload.items.map(item => item.name);\n  void names;\n'),
 ];
 
