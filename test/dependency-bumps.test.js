@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
@@ -12,9 +12,10 @@ const scratch = mkdtempSync(join(tmpdir(), 'zoroskr-check-deps-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 const SKILL = 'See skill `dependency-bumps`.';
-const USAGE = 'Usage: check-deps --base <git-ref> [--prefix <dir>]\n';
+const USAGE = 'Usage: zoroskr-check-deps --base <git-ref> [--prefix <dir>]\n';
 const pin = (manifest, section, name, spec) => `${manifest}: new dependency \`${name}\` in ${section} is "${spec}"; pin an exact version (\`npm install --save-exact\`). ${SKILL}`;
 const drift = (lock, section, name, lockSpec, spec) => `${lock}: packages[""].${section}.${name} is ${lockSpec === undefined ? 'missing' : `"${lockSpec}"`} but package.json has "${spec}"; sync the lockfile. ${SKILL}`;
+const stale = (lock, section, name, lockSpec) => `${lock}: packages[""].${section}.${name} is "${lockSpec}" but package.json has none; sync the lockfile. ${SKILL}`;
 const noLock = lock => `${lock}: not found; commit the lockfile CI installs from. ${SKILL}`;
 
 function git(cwd, ...args) {
@@ -104,7 +105,29 @@ test('a dependency missing from the lock root, or in another lock section, is re
     { dependencies: { 'zod': '^4.0.0', 'left-pad': '1.3.0' }, devDependencies: { eslint: '^9.0.0' } },
     { dependencies: { zod: '^4.0.0' }, devDependencies: { 'eslint': '^9.0.0', 'left-pad': '1.3.0' } },
   );
-  assert.deepEqual(checkDeps(repo(base, head), '--base', 'main'), failure([drift('package-lock.json', 'dependencies', 'left-pad', undefined, '1.3.0')]));
+  assert.deepEqual(checkDeps(repo(base, head), '--base', 'main'), failure([
+    drift('package-lock.json', 'dependencies', 'left-pad', undefined, '1.3.0'),
+    stale('package-lock.json', 'devDependencies', 'left-pad', '1.3.0'),
+  ]));
+});
+
+test('a lock root entry removed from the manifest is rejected in every section', () => {
+  const head = pair(
+    { dependencies: { zod: '^4.0.0' } },
+    { dependencies: { 'zod': '^4.0.0', 'left-pad': '1.3.0' }, devDependencies: { eslint: '^9.0.0' }, optionalDependencies: { fsevents: '2.3.3' } },
+  );
+  assert.deepEqual(checkDeps(repo(base, head), '--base', 'main'), failure([
+    stale('package-lock.json', 'dependencies', 'left-pad', '1.3.0'),
+    stale('package-lock.json', 'devDependencies', 'eslint', '^9.0.0'),
+    stale('package-lock.json', 'optionalDependencies', 'fsevents', '2.3.3'),
+  ]));
+});
+
+test('lock root peer dependencies and other packages are not compared with the manifest', () => {
+  const head = pair({ dependencies: { zod: '^4.0.0' }, devDependencies: { eslint: '^9.0.0' } });
+  head['package-lock.json'].packages[''].peerDependencies = { react: '^19.0.0' };
+  head['package-lock.json'].packages['node_modules/left-pad'] = { version: '1.3.0' };
+  assert.deepEqual(checkDeps(repo(base, head), '--base', 'main'), success);
 });
 
 test('a new range and a stale lock are both reported, pins first', () => {
@@ -128,11 +151,16 @@ test('a lockfile without a root package reports every dependency', () => {
   assert.deepEqual(checkDeps(cwd, '--base', 'main'), failure([drift('package-lock.json', 'dependencies', 'zod', undefined, '^4.0.0')]));
 });
 
-test('a manifest absent at base gets only the lock agreement check', () => {
-  const cwd = repo({}, pair({ dependencies: { 'zod': '^4.0.0', 'left-pad': 'latest' } }));
+test('a manifest absent at base makes every dependency new', () => {
+  const cwd = repo({}, pair({ dependencies: { 'zod': '^4.0.0', 'left-pad': '1.3.0' }, devDependencies: { tsx: 'latest' } }));
+  assert.deepEqual(checkDeps(cwd, '--base', 'main'), failure([
+    pin('package.json', 'dependencies', 'zod', '^4.0.0'),
+    pin('package.json', 'devDependencies', 'tsx', 'latest'),
+  ]));
+  write(cwd, pair({ dependencies: { 'zod': '4.0.0', 'left-pad': '1.3.0' } }, { dependencies: { zod: '4.0.0' } }));
+  assert.deepEqual(checkDeps(cwd, '--base', 'main'), failure([drift('package-lock.json', 'dependencies', 'left-pad', undefined, '1.3.0')]));
+  write(cwd, pair({ dependencies: { 'zod': '4.0.0', 'left-pad': '1.3.0' } }));
   assert.deepEqual(checkDeps(cwd, '--base', 'main'), success);
-  write(cwd, { 'package-lock.json': lockfile({ dependencies: { zod: '^4.0.0' } }) });
-  assert.deepEqual(checkDeps(cwd, '--base', 'main'), failure([drift('package-lock.json', 'dependencies', 'left-pad', undefined, 'latest')]));
 });
 
 test('--prefix checks a nested npm project against its own files at base', () => {
@@ -164,6 +192,11 @@ test('usage errors exit 2 without checking', () => {
   assert.deepEqual(checkDeps(cwd, '--base'), { status: 2, stdout: '', stderr: USAGE });
   assert.deepEqual(checkDeps(cwd, '--base', 'main', '--unknown'), { status: 2, stdout: '', stderr: USAGE });
   assert.deepEqual(checkDeps(cwd, '--base', 'main', 'extra'), { status: 2, stdout: '', stderr: USAGE });
-  assert.deepEqual(checkDeps(cwd, '--base', 'nope'), { status: 2, stdout: '', stderr: 'check-deps: unknown git ref `nope`\n' });
-  assert.deepEqual(checkDeps(cwd, '--base', 'main', '--prefix', 'missing'), { status: 2, stdout: '', stderr: 'check-deps: missing/package.json not found\n' });
+  assert.deepEqual(checkDeps(cwd, '--base', 'nope'), { status: 2, stdout: '', stderr: 'zoroskr-check-deps: unknown git ref `nope`\n' });
+  assert.deepEqual(checkDeps(cwd, '--base', 'main', '--prefix', 'missing'), { status: 2, stdout: '', stderr: 'zoroskr-check-deps: missing/package.json not found\n' });
+});
+
+test('the bin is published as zoroskr-check-deps only', () => {
+  const { bin: bins } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  assert.deepEqual(bins, { 'zoroskr-check-deps': 'bin/check-deps.js' });
 });

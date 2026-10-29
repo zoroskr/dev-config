@@ -45,7 +45,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "check-deps": "bin/check-deps.js"
+    "zoroskr-check-deps": "bin/check-deps.js"
   },
   "files": [
     "bin/check-deps.js",

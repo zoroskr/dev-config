@@ -8,6 +8,7 @@ const { relativeFilename, unwrap } = require('./query-hooks.cjs');
 const CACHE_TTL_MS = 2000;
 const FUNCTIONS = new Set(['ArrowFunctionExpression', 'FunctionDeclaration', 'FunctionExpression']);
 const TSCONFIG_NAMES = ['tsconfig.json', 'tsconfig.strict.json'];
+const MODULE_EXTENSIONS = ['.ts', '.tsx', '.d.ts', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.json'];
 const LAYOUT_NAMES = ['layout.tsx', 'layout.ts'];
 const PAGE_NAMES = ['page.tsx', 'page.ts'];
 const CATEGORIES = new Set(['components', 'constants', 'hooks', 'schemas', 'utils']);
@@ -164,6 +165,33 @@ const resolveImport = (filename, source) => {
   return match === undefined ? null : toPosix(path.resolve(match.base, match.target.replace('*', match.wildcard)));
 };
 
+const baseUrls = directory => cached(`baseUrl:${directory}`, () => {
+  const configs = TSCONFIG_NAMES.filter(name => hasFile(directory, name));
+  if (configs.length === 0) {
+    const parent = path.dirname(directory);
+    return parent === directory ? [] : baseUrls(parent);
+  }
+  return configs
+    .map(name => configPaths(path.join(directory, name), new Set()).baseUrl)
+    .filter(baseUrl => baseUrl !== undefined);
+});
+
+const moduleExists = (target) => {
+  const entries = directoryEntries(path.dirname(target));
+  const name = path.basename(target);
+  return entries.has(name) || MODULE_EXTENSIONS.some(extension => entries.get(`${name}${extension}`) === false);
+};
+
+const resolveBaseUrlImport = (filename, source) => {
+  if (source.startsWith('.') || path.isAbsolute(source)) {
+    return null;
+  }
+  const target = baseUrls(path.dirname(filename))
+    .map(baseUrl => path.resolve(baseUrl, source))
+    .find(moduleExists);
+  return target === undefined ? null : toPosix(target);
+};
+
 const privateGlobalScope = (filename, target) => {
   const segments = target.split('/');
   return segments
@@ -286,6 +314,7 @@ module.exports = {
   memberName,
   nearestDynamicLayout,
   privateGlobalScope,
+  resolveBaseUrlImport,
   resolveImport,
   routeLocation,
   staticString,

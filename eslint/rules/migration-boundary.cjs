@@ -1,4 +1,4 @@
-const { displayPath, resolveImport, staticString } = require('./app-router.cjs');
+const { calleeName, displayPath, memberName, resolveBaseUrlImport, resolveImport, staticString } = require('./app-router.cjs');
 const { globSource, relativeFilename } = require('./query-hooks.cjs');
 
 const normalizeRoot = root => root.replace(/^\.\//u, '').replace(/\/+$/u, '');
@@ -13,6 +13,20 @@ const insideRoot = (patterns, relative, includeSelf) => {
   const depth = includeSelf ? segments.length : segments.length - 1;
   return Array.from({ length: depth }, (_, index) => segments.slice(0, index + 1).join('/'))
     .some(prefix => patterns.some(pattern => pattern.test(prefix)));
+};
+
+const typeOnly = node => node.importKind === 'type'
+  || node.exportKind === 'type'
+  || (node.specifiers?.length > 0 && node.specifiers.every(specifier => specifier.importKind === 'type' || specifier.exportKind === 'type'));
+
+const isRequire = ({ callee }) => {
+  if (callee.type === 'Identifier') {
+    return callee.name === 'require';
+  }
+  if (callee.type === 'MemberExpression') {
+    return callee.object.type === 'Identifier' && callee.object.name === 'module' && memberName(callee) === 'require';
+  }
+  return callee.type === 'CallExpression' && calleeName(callee) === 'createRequire';
 };
 
 module.exports = {
@@ -36,14 +50,14 @@ module.exports = {
 
     const check = (node, sourceNode) => {
       const source = staticString(sourceNode);
-      const target = source === null ? null : resolveImport(filename, source);
+      const target = source === null ? null : (resolveImport(filename, source) ?? resolveBaseUrlImport(filename, source));
       if (target !== null && insideRoot(patterns, displayPath(context, target), true)) {
         context.report({ node, messageId: 'boundary', data: { source } });
       }
     };
 
     const checkDeclaration = (node) => {
-      if (node.source !== null && node.importKind !== 'type' && node.exportKind !== 'type') {
+      if (node.source !== null && !typeOnly(node)) {
         check(node, node.source);
       }
     };
@@ -56,7 +70,7 @@ module.exports = {
         check(node, node.source);
       },
       CallExpression(node) {
-        if (node.callee.type === 'Identifier' && node.callee.name === 'require' && node.arguments.length > 0) {
+        if (node.arguments.length > 0 && isRequire(node)) {
           check(node, node.arguments[0]);
         }
       },

@@ -8,7 +8,8 @@ const SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencies'];
 const VERSION_CORE = /^\d+\.\d+\.\d+/u;
 const VERSION_SUFFIX = /^[-+][\da-z.+-]+$/iu;
 const SKILL = 'See skill `dependency-bumps`.';
-const USAGE = 'Usage: check-deps --base <git-ref> [--prefix <dir>]\n';
+const BIN = 'zoroskr-check-deps';
+const USAGE = `Usage: ${BIN} --base <git-ref> [--prefix <dir>]\n`;
 
 class UsageError extends Error {}
 
@@ -60,9 +61,6 @@ const isExactVersion = (spec) => {
 const entryKey = ({ section, name }) => `${section}\0${name}`;
 
 function pinProblems(manifestPath, manifest, baseManifest) {
-  if (baseManifest === null) {
-    return [];
-  }
   const existing = new Set(entries(baseManifest).map(({ name }) => name));
   return entries(manifest)
     .filter(({ name, spec }) => !existing.has(name) && !isExactVersion(spec))
@@ -73,13 +71,20 @@ function lockProblems(lockPath, manifest, lock) {
   if (lock === null) {
     return [`${lockPath}: not found; commit the lockfile CI installs from. ${SKILL}`];
   }
-  const locked = new Map(entries(lock.packages?.['']).map(entry => [entryKey(entry), entry.spec]));
-  return entries(manifest)
-    .filter(entry => locked.get(entryKey(entry)) !== entry.spec)
-    .map(({ section, name, spec }) => {
-      const lockSpec = locked.get(entryKey({ section, name }));
-      return `${lockPath}: packages[""].${section}.${name} is ${lockSpec === undefined ? 'missing' : `"${lockSpec}"`} but package.json has "${spec}"; sync the lockfile. ${SKILL}`;
-    });
+  const lockEntries = entries(lock.packages?.['']);
+  const locked = new Map(lockEntries.map(entry => [entryKey(entry), entry.spec]));
+  const declared = new Set(entries(manifest).map(entryKey));
+  return [
+    ...entries(manifest)
+      .filter(entry => locked.get(entryKey(entry)) !== entry.spec)
+      .map(({ section, name, spec }) => {
+        const lockSpec = locked.get(entryKey({ section, name }));
+        return `${lockPath}: packages[""].${section}.${name} is ${lockSpec === undefined ? 'missing' : `"${lockSpec}"`} but package.json has "${spec}"; sync the lockfile. ${SKILL}`;
+      }),
+    ...lockEntries
+      .filter(entry => !declared.has(entryKey(entry)))
+      .map(({ section, name, spec }) => `${lockPath}: packages[""].${section}.${name} is "${spec}" but package.json has none; sync the lockfile. ${SKILL}`),
+  ];
 }
 
 function main(args) {
@@ -88,10 +93,10 @@ function main(args) {
   const lockPath = posix.join(prefix, 'package-lock.json');
   const manifest = readWorking(manifestPath);
   if (manifest === null) {
-    throw new UsageError(`check-deps: ${manifestPath} not found\n`);
+    throw new UsageError(`${BIN}: ${manifestPath} not found\n`);
   }
   if (git('rev-parse', '--verify', '--quiet', `${base}^{commit}`).status !== 0) {
-    throw new UsageError(`check-deps: unknown git ref \`${base}\`\n`);
+    throw new UsageError(`${BIN}: unknown git ref \`${base}\`\n`);
   }
   return [
     ...pinProblems(manifestPath, manifest, readBase(base, manifestPath)),

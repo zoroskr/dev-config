@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -13,6 +13,9 @@ const RULE = 'local/migration-boundary';
 const boundary = source => `Do not import \`${source}\` outside a migrations root; a migration is a standalone operator-run module, never wired into app code. See skill \`data-migration-safety\`.`;
 const tsconfig = JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@/*': ['./src/*'], '@backend/*': ['./src/backend/*'] } } });
 const roots = { migrations: { roots: ['src/backend/migrations'] } };
+const router = 'src/backend/routers/admin.router.ts';
+const run = 'export const result = run;\n';
+const rename = '../migrations/rename/rename.migration';
 
 const configs = new Map();
 
@@ -28,6 +31,10 @@ function writeTree() {
   const cwd = mkdtempSync(join(scratch, 'case-'));
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixture tree inside the test temp directory
   writeFileSync(join(cwd, 'tsconfig.json'), tsconfig);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixture tree inside the test temp directory
+  mkdirSync(join(cwd, 'src/backend/migrations/rename'), { recursive: true });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixture tree inside the test temp directory
+  writeFileSync(join(cwd, 'src/backend/migrations/rename/rename.migration.ts'), run);
   return cwd;
 }
 
@@ -38,9 +45,6 @@ async function lint(file, code, options = roots) {
   assert.equal(result.messages.some(message => message.fatal), false, JSON.stringify(result.messages));
   return result.messages.filter(message => message.ruleId === RULE).map(message => message.message);
 }
-
-const router = 'src/backend/routers/admin.router.ts';
-const run = 'export const result = run;\n';
 
 const rejected = [
   [router, `import { run } from '@backend/migrations/rename/rename.migration';\n\n${run}`, ['@backend/migrations/rename/rename.migration']],
@@ -60,6 +64,18 @@ const rejected = [
   ['scripts/apply.ts', `import { run } from '../src/backend/migrations/rename/rename.migration';\n\n${run}`, ['../src/backend/migrations/rename/rename.migration']],
   ['src/backend/migrations.ts', `import { run } from './migrations/rename/rename.migration';\n\n${run}`, ['./migrations/rename/rename.migration']],
   ['src/backend/routers/admin.router.js', 'const rename = require(\'../migrations/rename/rename.migration\');\n\nexport default rename;\n', ['../migrations/rename/rename.migration']],
+  [router, `import { type Rename, run } from '${rename}';\n\nexport const value = run satisfies Rename;\n`, [rename]],
+  [router, `import run, { type Rename } from '${rename}';\n\nexport const value = run satisfies Rename;\n`, [rename]],
+  [router, `import {} from '${rename}';\n`, [rename]],
+  [router, `export { type Rename, run } from '${rename}';\n`, [rename]],
+  [router, `export { run as default, type Rename } from '${rename}';\n`, [rename]],
+  [router, `import { run } from 'src/backend/migrations/rename/rename.migration';\n\n${run}`, ['src/backend/migrations/rename/rename.migration']],
+  [router, `import { run } from 'src/backend/migrations';\n\n${run}`, ['src/backend/migrations']],
+  [router, `export const load = () => import('src/backend/migrations/rename/rename.migration.ts');\n`, ['src/backend/migrations/rename/rename.migration.ts']],
+  [router, `export const rename = module.require('${rename}');\n`, [rename]],
+  [router, `export const rename = module['require']('${rename}');\n`, [rename]],
+  [router, `import { createRequire } from 'node:module';\n\nexport const rename = createRequire(import.meta.url)('${rename}');\n`, [rename]],
+  [router, `import nodeModule from 'node:module';\n\nexport const rename = nodeModule.createRequire(import.meta.url)(\`${rename}\`);\n`, [rename]],
 ];
 
 const accepted = [
@@ -76,6 +92,15 @@ const accepted = [
   [router, `import { run } from 'migrations';\n\n${run}`],
   [router, `import { run } from '@backend/services/migrations-report.service';\n\n${run}`],
   [router, 'export const load = (name: string) => import(name);\n'],
+  [router, `import { type Rename } from '${rename}';\n\nexport const value = 1 satisfies Rename;\n`],
+  [router, `import { type Rename, type Other as O } from '${rename}';\n\nexport const value = 1 satisfies Rename | O;\n`],
+  [router, `export { type Rename } from '${rename}';\n`],
+  [router, `export { type Rename, type Other as O } from '${rename}';\n`],
+  [router, `import { run } from 'src/backend/migrations/missing/apply';\n\n${run}`],
+  [router, `import { run } from 'src/backend/services/report.service';\n\n${run}`],
+  [router, `export const rename = other.require('${rename}');\n`],
+  [router, `export const rename = module.load('${rename}');\n`],
+  [router, `export const rename = makeRequire(import.meta.url)('${rename}');\n`],
 ];
 
 for (const [file, code, sources] of rejected) {
