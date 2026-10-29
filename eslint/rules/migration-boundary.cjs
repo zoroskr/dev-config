@@ -1,6 +1,16 @@
 const { calleeName, displayPath, memberName, resolveBaseUrlImport, resolveImport, staticString } = require('./app-router.cjs');
 const { globSource, relativeFilename } = require('./query-hooks.cjs');
 
+const TS_SOURCES = new Map([['.js', ['.ts', '.tsx']], ['.jsx', ['.tsx', '.ts']], ['.mjs', ['.mts']], ['.cjs', ['.cts']]]);
+
+const baseUrlTarget = (filename, source) => {
+  const extension = [...TS_SOURCES.keys()].find(key => source.endsWith(key));
+  const stem = extension === undefined ? source : source.slice(0, -extension.length);
+  return [source, ...(TS_SOURCES.get(extension) ?? []).map(sourceExtension => `${stem}${sourceExtension}`)]
+    .map(candidate => resolveBaseUrlImport(filename, candidate))
+    .find(target => target !== null) ?? null;
+};
+
 const normalizeRoot = root => root.replace(/^\.\//u, '').replace(/\/+$/u, '');
 
 const rootPatterns = roots => roots.map((root) => {
@@ -50,7 +60,7 @@ module.exports = {
 
     const check = (node, sourceNode) => {
       const source = staticString(sourceNode);
-      const target = source === null ? null : (resolveImport(filename, source) ?? resolveBaseUrlImport(filename, source));
+      const target = source === null ? null : (resolveImport(filename, source) ?? baseUrlTarget(filename, source));
       if (target !== null && insideRoot(patterns, displayPath(context, target), true)) {
         context.report({ node, messageId: 'boundary', data: { source } });
       }
