@@ -56,7 +56,7 @@ async function customMessages(options) {
   return messages;
 }
 
-const messages = await customMessages({ typescript: true, layeredBackend: true, isomorphic: true, query: true, appRouter: true, forms: true, webhooks: true });
+const messages = await customMessages({ typescript: true, layeredBackend: true, isomorphic: true, query: true, appRouter: true, forms: true, webhooks: true, migrations: true });
 
 test('every package lint message points agents to an existing global skill', () => {
   assert.ok(messages.size > 0);

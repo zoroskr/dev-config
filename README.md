@@ -46,6 +46,7 @@ The first argument takes these options; any other key is passed to `antfu()` (`n
 | `appRouter`           | `false`  | Next.js App Router structure rules; pass `{ app, shared, gateCallees, serverCallerModules }`                         |
 | `forms`               | `false`  | React Hook Form + Zod form rules; pass `{ files, schemaFiles, constantsFiles }`                                      |
 | `webhooks`            | `false`  | Route handler and signed webhook receiver rules; pass `{ routes, webhooks }`                                         |
+| `migrations`          | `false`  | Import boundary around migration modules; pass `{ roots }` to override the default `['**/migrations']`               |
 | `testSetupFiles`      | `[]`     | Test setup files (globs) allowed to call `vi.mock`/`vi.doMock` outside test files                                    |
 
 The i18n rule set is also exported as `i18nRules`, for standalone audit configs:
@@ -227,6 +228,20 @@ Known limits: both rules read one file. A header or secret passed to a helper is
 
 Both are local rules, so the package, production and `restrictedSyntax` selectors keep firing on route files.
 
+### With `migrations`
+
+Skill `data-migration-safety`. Pass `true` for the default or an object to override `roots`:
+
+```js
+export default zoroskr({ migrations: { roots: ['src/backend/migrations'] } });
+```
+
+| Key     | Default             | Use                                                                                                   |
+| ------- | ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `roots` | `['**/migrations']` | Migration folders, as folders or globs relative to the ESLint working directory (`**/`, `*`, `{a,b}`) |
+
+- `local/migration-boundary` (every source file outside a root, minus `*.test.*`): an import (side-effect and namespace included), `export { x } from`, `export *` (also `export * as ns`), `import()` or `require()` with a string or expression-free template literal whose target lies inside a root, or is the root itself (`import { run } from '../migrations'`). Relative paths and the `paths` of the nearest `tsconfig.json`/`tsconfig.strict.json` (with `extends` and `baseUrl`) are resolved, so `@backend/migrations/x` counts when `@backend/*` maps into a root; other bare imports pass. `import type`, `export type` and `import('…')` types pass, since they are erased. Files inside a root import each other freely.
+
 ### Testing
 
 Skill `vitest-testing`. Always on; `testSetupFiles` lists the setup files that may hold global mocks:
@@ -267,6 +282,22 @@ export default { extends: ['@zoroskr/config/commitlint'] };
 ```
 
 Conventional Commits, lowercase subject, no trailing period, header up to 150 characters.
+
+## check-deps
+
+Skill `dependency-bumps`. A bin for CI or a pre-commit hook in an npm project:
+
+```sh
+npx check-deps --base origin/main
+npx check-deps --base origin/main --prefix functions
+```
+
+It reads `<prefix>/package.json` and `<prefix>/package-lock.json` (`--prefix` defaults to `.`, relative to the working directory) from the working tree and `<prefix>/package.json` at `--base` (`git show`), then reports:
+
+- Every dependency in `dependencies`, `devDependencies` or `optionalDependencies` whose name is in none of those sections at base, unless its spec is an exact version (`1.2.3`, `1.2.3-beta.1`); ranges (`^`, `~`, `>`, `<`, `*`, `x`, `||`, `-`, partial versions such as `1.2`), `=1.2.3` and tags such as `latest` are rejected. A dependency moved between sections or kept from base keeps its range. When the manifest does not exist at base, this check is skipped.
+- Every dependency in those sections whose `packages[""]` entry in the lockfile, in the same section, differs from the manifest spec or is missing, and a missing lockfile.
+
+Each problem is one line ending with ``See skill `dependency-bumps`.`` on stdout, with exit code 1; no problem exits 0. A missing `--base`, an unknown option or argument, an unknown ref or a missing `package.json` exits 2 with the reason on stderr.
 
 ## Development
 

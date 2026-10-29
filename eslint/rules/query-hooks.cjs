@@ -70,4 +70,4 @@ const matchesGlobs = (context, globs) => {
   });
 };
 
-module.exports = { QUERY_FAMILY, QUERY_MODULE, RESULT_HOOK, STATE_QUERY, TS_WRAPPERS, isHookCall, matchesGlobs, relativeFilename, unwrap };
+module.exports = { QUERY_FAMILY, QUERY_MODULE, RESULT_HOOK, STATE_QUERY, TS_WRAPPERS, globSource, isHookCall, matchesGlobs, relativeFilename, unwrap };

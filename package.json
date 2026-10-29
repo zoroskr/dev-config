@@ -13,6 +13,7 @@
     "./eslint/rules/app-file-placement": "./eslint/rules/app-file-placement.cjs",
     "./eslint/rules/app-router-syntax": "./eslint/rules/app-router-syntax.cjs",
     "./eslint/rules/isomorphic-boundary": "./eslint/rules/isomorphic-boundary.cjs",
+    "./eslint/rules/migration-boundary": "./eslint/rules/migration-boundary.cjs",
     "./eslint/rules/no-call-argument-assertion": "./eslint/rules/no-call-argument-assertion.cjs",
     "./eslint/rules/no-comments": "./eslint/rules/no-comments.cjs",
     "./eslint/rules/no-console": "./eslint/rules/no-console.cjs",
@@ -43,13 +44,18 @@
     "./commitlint": "./commitlint/index.js",
     "./package.json": "./package.json"
   },
+  "bin": {
+    "check-deps": "bin/check-deps.js"
+  },
   "files": [
+    "bin/check-deps.js",
     "commitlint/index.js",
     "eslint/index.js",
     "eslint/rules/app-file-placement.cjs",
     "eslint/rules/app-router-syntax.cjs",
     "eslint/rules/app-router.cjs",
     "eslint/rules/isomorphic-boundary.cjs",
+    "eslint/rules/migration-boundary.cjs",
     "eslint/rules/mutation-trigger.cjs",
     "eslint/rules/no-call-argument-assertion.cjs",
     "eslint/rules/no-comments.cjs",

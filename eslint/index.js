@@ -5,6 +5,7 @@ import security from 'eslint-plugin-security';
 import appFilePlacement from './rules/app-file-placement.cjs';
 import appRouterSyntax from './rules/app-router-syntax.cjs';
 import isomorphicBoundary from './rules/isomorphic-boundary.cjs';
+import migrationBoundary from './rules/migration-boundary.cjs';
 import noCallArgumentAssertion from './rules/no-call-argument-assertion.cjs';
 import noComments from './rules/no-comments.cjs';
 import noConsole from './rules/no-console.cjs';
@@ -419,6 +420,23 @@ function webhooksConfigs(webhooks) {
   ];
 }
 
+const migrationsDefaults = {
+  roots: ['**/migrations'],
+};
+
+function migrationsConfigs(migrations) {
+  if (!migrations) {
+    return [];
+  }
+  const { roots } = { ...migrationsDefaults, ...(typeof migrations === 'object' ? migrations : {}) };
+  return [{
+    name: 'zoroskr/migrations/boundary',
+    files: [sourceFiles],
+    ignores: ['**/*.test.*'],
+    rules: { 'local/migration-boundary': ['error', { roots }] },
+  }];
+}
+
 const typeScriptRules = {
   'ts/ban-ts-comment': 'error',
   'ts/consistent-type-definitions': ['error', 'type'],
@@ -531,6 +549,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     appRouter = false,
     forms = false,
     webhooks = false,
+    migrations = false,
     testSetupFiles = [],
     inferredReturnTypes = true,
     envFiles,
@@ -567,6 +586,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
             'app-file-placement': appFilePlacement,
             'app-router-syntax': appRouterSyntax,
             'isomorphic-boundary': isomorphicBoundary,
+            'migration-boundary': migrationBoundary,
             'no-call-argument-assertion': noCallArgumentAssertion,
             'no-comments': noComments,
             'no-console': noConsole,
@@ -690,6 +710,7 @@ export default async function zoroskr(options = {}, ...userConfigs) {
     ...appRouterConfigs(appRouter),
     ...formsConfigs(forms),
     ...webhooksConfigs(webhooks),
+    ...migrationsConfigs(migrations),
     ...queryConfigs(query, productionRestrictedSyntax),
     ...(typeAware ? [{ name: 'zoroskr/typescript-type-aware', files: typeScriptFiles, rules: typeAwareRules }] : []),
     ...(await optionalConfigs({ query, tailwind, i18n })),
