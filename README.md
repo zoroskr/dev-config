@@ -299,6 +299,25 @@ It reads `<prefix>/package.json` and `<prefix>/package-lock.json` (`--prefix` de
 
 Each problem is one line ending with ``See skill `dependency-bumps`.`` on stdout, with exit code 1; no problem exits 0. A missing `--base`, an unknown option or argument, an unknown ref or a missing `package.json` exits 2 with the reason on stderr.
 
+## zoroskr-check-skills
+
+Checks every `<skills-dir>/*/SKILL.md` against the skill style guide (`~/.agents/skills/docs/skill-style-guide.md`). Run it on a project's skills with the global skills dir, and on the global skills dir limited to your own skills:
+
+```sh
+npm exec --no -- zoroskr-check-skills .agents/skills --globals ~/.agents/skills
+npm exec --no -- zoroskr-check-skills ~/.agents/skills --author zoroskr
+```
+
+It reports:
+
+- Frontmatter: `name` equal to the folder; `description` on one quoted line, at most 250 chars, starting with `Trigger:`; `license`, `metadata.author`, `metadata.version`; `metadata.tier` one of `tactical`, `domain`, `architectural`. A file without frontmatter is one problem.
+- Body budget: the body after the frontmatter, estimated as UTF-8 bytes / 4 (rounded up), at most 1000 (`tactical`), 2000 (`domain`) or 3000 (`architectural`) tokens.
+- Sections: `## Activation Contract`, `## Hard Rules`, `## Decision Gates`, `## Execution Steps`, `## Output Contract` present, and those plus an optional `## References` in that order. Other `##` sections are allowed; headings inside fenced code are ignored.
+- PR and issue numbers in the description or body: `#<n>` outside code, `/pull/<n>`, `/issues/<n>`.
+- With `--globals <dir>`: an Activation Contract that names ``Extends global `<name>` `` must start with ``Extends global `<name>`; load it first.`` and every named global must have `<dir>/<name>/SKILL.md`.
+
+`--author <name>` checks only skills whose `metadata.author` is `<name>` (others, and files without frontmatter, are skipped). Each problem is one line `<skill>: <problem>` on stdout, with exit code 1; no problem exits 0. A missing or extra argument, an unknown option or a directory that does not exist exits 2 with the reason on stderr.
+
 ## Development
 
 ```sh

@@ -196,7 +196,7 @@ test('usage errors exit 2 without checking', () => {
   assert.deepEqual(checkDeps(cwd, '--base', 'main', '--prefix', 'missing'), { status: 2, stdout: '', stderr: 'zoroskr-check-deps: missing/package.json not found\n' });
 });
 
-test('the bin is published as zoroskr-check-deps only', () => {
+test('the bin is published as zoroskr-check-deps', () => {
   const { bin: bins } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-  assert.deepEqual(bins, { 'zoroskr-check-deps': 'bin/check-deps.js' });
+  assert.equal(bins['zoroskr-check-deps'], 'bin/check-deps.js');
 });

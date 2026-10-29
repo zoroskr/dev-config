@@ -45,10 +45,12 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "zoroskr-check-deps": "bin/check-deps.js"
+    "zoroskr-check-deps": "bin/check-deps.js",
+    "zoroskr-check-skills": "bin/check-skills.js"
   },
   "files": [
     "bin/check-deps.js",
+    "bin/check-skills.js",
     "commitlint/index.js",
     "eslint/index.js",
     "eslint/rules/app-file-placement.cjs",
