@@ -301,11 +301,11 @@ Each problem is one line ending with ``See skill `dependency-bumps`.`` on stdout
 
 ## zoroskr-check-skills
 
-Checks every `<skills-dir>/*/SKILL.md` against the skill style guide (`~/.agents/skills/docs/skill-style-guide.md`). Run it on a project's skills with the global skills dir, and on the global skills dir leaving out the third-party skills that share it:
+Checks every `<skills-dir>/*/SKILL.md` against the skill style guide (`~/.agents/skills/docs/skill-style-guide.md`). Run it on a project's skills with the global skills dir, and on the global skills dir checking only the skills tracked by its git repository, which leaves out the untracked third-party skills that share it:
 
 ```sh
 npm exec --no -- zoroskr-check-skills .agents/skills --globals ~/.agents/skills
-npm exec --no -- zoroskr-check-skills ~/.agents/skills --skip <third-party>[,<third-party>]
+npm exec --no -- zoroskr-check-skills ~/.agents/skills --tracked
 ```
 
 It reports:
@@ -316,7 +316,7 @@ It reports:
 - PR and issue numbers in the description or body: `#<n>` outside code, `/pull/<n>`, `/issues/<n>`.
 - With `--globals <dir>`: an Activation Contract that names ``Extends global `<name>` `` must start with ``Extends global `<name>`; load it first.`` and every named global must have `<dir>/<name>/SKILL.md`. Every name in a list is checked: ``Extends global `a`, `b` and `c` (forms); load them first.``
 
-`--skip <name>` (repeatable or comma-separated) leaves those skill folders out, e.g. third-party skills sharing the directory. `--author <name>` is a filter that trusts the `metadata.author` field: it skips skills whose `metadata.author` is present and is not `<name>` (both trimmed), so a misspelled author hides that skill; use `--skip` for a gate. A skill with no or empty `metadata.author` is still checked and reports `metadata.author is missing`, and a file whose frontmatter does not parse still reports `frontmatter is missing`. Each problem is one line `<skill>: <problem>` on stdout, with exit code 1; no problem exits 0. A missing or extra argument, an unknown option or a directory that does not exist exits 2 with the reason on stderr.
+`--tracked` checks only the skill folders whose `SKILL.md` is tracked by git in the repository containing `<skills-dir>` (`git -C <skills-dir> ls-files -- '*/SKILL.md'`); if git fails or `<skills-dir>` is outside a repository it exits 2 with the reason on stderr. `--skip <name>` (repeatable or comma-separated) leaves those skill folders out. `--tracked`, `--skip`, `--author` and `--globals` compose. `--author <name>` is a filter that trusts the `metadata.author` field: it skips skills whose `metadata.author` is present and is not `<name>` (both trimmed), so a misspelled author hides that skill; use `--skip` for a gate. A skill with no or empty `metadata.author` is still checked and reports `metadata.author is missing`, and a file whose frontmatter does not parse still reports `frontmatter is missing`. Each problem is one line `<skill>: <problem>` on stdout, with exit code 1; no problem exits 0. A missing or extra argument, an unknown option, a directory that does not exist or a `--tracked` git failure exits 2 with the reason on stderr.
 
 ## Development
 

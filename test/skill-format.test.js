@@ -12,7 +12,7 @@ const bin = join(root, 'bin/check-skills.js');
 const scratch = mkdtempSync(join(tmpdir(), 'zoroskr-check-skills-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-const USAGE = 'Usage: zoroskr-check-skills <skills-dir> [--globals <dir>] [--author <name>] [--skip <name>[,<name>]]\n';
+const USAGE = 'Usage: zoroskr-check-skills <skills-dir> [--globals <dir>] [--author <name>] [--skip <name>[,<name>]] [--tracked]\n';
 const ORDER = 'Activation Contract, Hard Rules, Decision Gates, Execution Steps, Output Contract, References';
 
 const frontmatter = ({
@@ -61,8 +61,17 @@ function skillsDir(skills) {
 }
 
 function checkSkills(...args) {
-  const result = spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8' });
+  return checkSkillsWithEnv(process.env, ...args);
+}
+
+function checkSkillsWithEnv(env, ...args) {
+  const result = spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', env });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+function git(cwd, ...args) {
+  const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
 }
 
 const problems = (...lines) => ({ status: 1, stdout: lines.map(line => `${line}\n`).join(''), stderr: '' });
@@ -276,9 +285,9 @@ test('trailing YAML comments outside quotes are stripped from scalar values', ()
   assert.deepEqual(checkSkills(skillsDir({ demo: skill({ version: '1.0#rc' }) })), clean);
 });
 
-test('the README documents the global-repo check with --skip and without --author', () => {
+test('the README documents the global-repo check with --tracked and without --author', () => {
   const readme = readFileSync(join(root, 'README.md'), 'utf8');
-  assert.ok(readme.includes('npm exec --no -- zoroskr-check-skills ~/.agents/skills --skip <third-party>[,<third-party>]\n'));
+  assert.ok(readme.includes('npm exec --no -- zoroskr-check-skills ~/.agents/skills --tracked\n'));
   assert.ok(!/zoroskr-check-skills [^\n]*--author/u.test(readme));
   assert.ok(readme.includes('`--author <name>` is a filter that trusts the `metadata.author` field'));
 });
@@ -322,4 +331,70 @@ test('--skip leaves named skills out of the check', () => {
   const dir = skillsDir({ demo: skill({ name: 'wrong' }), vendor: '# No frontmatter\n', other: skill({ name: 'nope' }) });
   assert.deepEqual(checkSkills(dir, '--skip', 'vendor', '--skip', 'other'), problems('demo: name "wrong" does not match the folder'));
   assert.deepEqual(checkSkills(dir, '--skip', 'vendor,other'), problems('demo: name "wrong" does not match the folder'));
+});
+
+function trackedRepo() {
+  const repo = mkdtempSync(join(scratch, 'repo-'));
+  git(repo, 'init', '--quiet');
+  const dir = join(repo, 'skills');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixture repo inside the test temp directory
+  mkdirSync(dir);
+  const skills = {
+    'demo': skill({ name: 'wrong' }),
+    'other': skill({ name: 'nope', author: 'someone-else' }),
+    'vendor': '# No frontmatter\n',
+    'group/inner': '# No frontmatter\n',
+  };
+  for (const [folder, content] of Object.entries(skills)) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixture repo inside the test temp directory
+    mkdirSync(join(dir, folder), { recursive: true });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixture repo inside the test temp directory
+    writeFileSync(join(dir, folder, 'SKILL.md'), content);
+  }
+  git(repo, 'add', 'skills/demo/SKILL.md', 'skills/other/SKILL.md', 'skills/group/inner/SKILL.md');
+  return dir;
+}
+
+test('--tracked checks only skills whose SKILL.md is tracked by git', () => {
+  const dir = trackedRepo();
+  assert.deepEqual(
+    checkSkills(dir, '--tracked'),
+    problems('demo: name "wrong" does not match the folder', 'other: name "nope" does not match the folder'),
+  );
+  assert.deepEqual(
+    checkSkills(dir),
+    problems('demo: name "wrong" does not match the folder', 'other: name "nope" does not match the folder', 'vendor: frontmatter is missing'),
+  );
+});
+
+test('--tracked composes with --skip and --author', () => {
+  const dir = trackedRepo();
+  assert.deepEqual(checkSkills(dir, '--tracked', '--skip', 'demo'), problems('other: name "nope" does not match the folder'));
+  assert.deepEqual(checkSkills(dir, '--tracked', '--author', 'zoroskr'), problems('demo: name "wrong" does not match the folder'));
+  assert.deepEqual(checkSkills(dir, '--tracked', '--skip', 'demo,other'), clean);
+});
+
+test('--tracked composes with --globals', () => {
+  const dir = trackedRepo();
+  const globals = skillsDir({ base: skill({ name: 'base' }) });
+  const extending = skill({}, { ...SECTIONS, 'Activation Contract': 'Extends global `gone`; load it first.' });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixture repo inside the test temp directory
+  writeFileSync(join(dir, 'demo', 'SKILL.md'), extending);
+  assert.deepEqual(
+    checkSkills(dir, '--tracked', '--skip', 'other', '--globals', globals),
+    problems('demo: Extends global `gone` names no skill in the globals dir'),
+  );
+});
+
+test('--tracked exits 2 when git fails', () => {
+  const outside = skillsDir({ demo: skill() });
+  const { status, stdout, stderr } = checkSkillsWithEnv({ ...process.env, GIT_CEILING_DIRECTORIES: scratch }, outside, '--tracked');
+  assert.deepEqual({ status, stdout }, { status: 2, stdout: '' });
+  assert.ok(stderr.startsWith(`zoroskr-check-skills: git ls-files failed in ${outside}: fatal: not a git repository`), stderr);
+  assert.ok(stderr.endsWith('\n') && stderr.split('\n').length === 2, stderr);
+  const dir = trackedRepo();
+  assert.deepEqual(
+    checkSkillsWithEnv({ ...process.env, PATH: '' }, dir, '--tracked'),
+    { status: 2, stdout: '', stderr: `zoroskr-check-skills: git ls-files failed in ${dir}: spawnSync git ENOENT\n` },
+  );
 });

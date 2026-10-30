@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { Buffer } from 'node:buffer';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const BIN = 'zoroskr-check-skills';
-const USAGE = `Usage: ${BIN} <skills-dir> [--globals <dir>] [--author <name>] [--skip <name>[,<name>]]\n`;
+const USAGE = `Usage: ${BIN} <skills-dir> [--globals <dir>] [--author <name>] [--skip <name>[,<name>]] [--tracked]\n`;
 const TIER_MAX = new Map([['tactical', 1000], ['domain', 2000], ['architectural', 3000]]);
 const SECTIONS = ['Activation Contract', 'Hard Rules', 'Decision Gates', 'Execution Steps', 'Output Contract', 'References'];
 const OPTIONAL_SECTIONS = new Set(['References']);
@@ -24,13 +25,13 @@ function parseOptions(args) {
   try {
     const { values, positionals } = parseArgs({
       args,
-      options: { globals: { type: 'string' }, author: { type: 'string' }, skip: { type: 'string', multiple: true } },
+      options: { globals: { type: 'string' }, author: { type: 'string' }, skip: { type: 'string', multiple: true }, tracked: { type: 'boolean' } },
       allowPositionals: true,
     });
     if (positionals.length !== 1) {
       throw new UsageError(USAGE);
     }
-    return { dir: positionals[0], globals: values.globals, author: values.author, skip: new Set((values.skip ?? []).flatMap(value => value.split(',')).map(name => name.trim())) };
+    return { dir: positionals[0], globals: values.globals, author: values.author, skip: new Set((values.skip ?? []).flatMap(value => value.split(',')).map(name => name.trim())), tracked: values.tracked === true };
   } catch (error) {
     throw error instanceof UsageError ? error : new UsageError(USAGE);
   }
@@ -41,6 +42,19 @@ function assertDirectory(dir) {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
     throw new UsageError(`${BIN}: ${dir} is not a directory\n`);
   }
+}
+
+function trackedFolders(dir) {
+  const result = spawnSync('git', ['-C', dir, 'ls-files', '-z', '--', '*/SKILL.md'], { encoding: 'utf8' });
+  if (result.error !== undefined || result.status !== 0) {
+    const reason = result.error === undefined ? result.stderr.trim().split('\n')[0] : result.error.message;
+    throw new UsageError(`${BIN}: git ls-files failed in ${dir}: ${reason}\n`);
+  }
+  return new Set(result.stdout
+    .split('\0')
+    .map(path => path.split('/'))
+    .filter(parts => parts.length === 2 && parts[1] === 'SKILL.md')
+    .map(([folder]) => folder));
 }
 
 function unquote(value) {
@@ -243,10 +257,11 @@ function main(args) {
   if (options.globals !== undefined) {
     assertDirectory(options.globals);
   }
+  const tracked = options.tracked ? trackedFolders(options.dir) : null;
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- skills directory from the command line
   return readdirSync(options.dir)
     .toSorted()
-    .filter(folder => !options.skip.has(folder))
+    .filter(folder => !options.skip.has(folder) && (tracked === null || tracked.has(folder)))
     .map(folder => ({ folder, file: join(options.dir, folder, 'SKILL.md') }))
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- skill file inside the skills directory
     .filter(({ file }) => existsSync(file))
