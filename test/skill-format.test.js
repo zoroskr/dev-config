@@ -12,7 +12,7 @@ const bin = join(root, 'bin/check-skills.js');
 const scratch = mkdtempSync(join(tmpdir(), 'zoroskr-check-skills-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-const USAGE = 'Usage: zoroskr-check-skills <skills-dir> [--globals <dir>] [--author <name>]\n';
+const USAGE = 'Usage: zoroskr-check-skills <skills-dir> [--globals <dir>] [--author <name>] [--skip <name>[,<name>]]\n';
 const ORDER = 'Activation Contract, Hard Rules, Decision Gates, Execution Steps, Output Contract, References';
 
 const frontmatter = ({
@@ -177,6 +177,19 @@ test('--globals checks that Extends global names an existing global', () => {
   for (const contract of variants) {
     assert.deepEqual(checkSkills(skillsDir({ demo: skill({}, { ...SECTIONS, 'Activation Contract': contract }) }), '--globals', pair), clean);
   }
+  const listed = [
+    ['Extends global `base` and `gone`; load them first. Apply to demo work.', ['gone']],
+    ['Extends global `base`, `other` and `gone`; load them first.', ['gone']],
+    ['Extends global `base` (pagination UI) and `gone` (forms); load them first.', ['gone']],
+    ['Extends global `lost`, `gone`; load them first.', ['lost', 'gone']],
+  ];
+  for (const [contract, missingNames] of listed) {
+    assert.deepEqual(
+      checkSkills(skillsDir({ demo: skill({}, { ...SECTIONS, 'Activation Contract': contract }) }), '--globals', pair),
+      problems(...missingNames.map(name => `demo: Extends global \`${name}\` names no skill in the globals dir`)),
+      contract,
+    );
+  }
   const elsewhere = skill({}, { ...SECTIONS, 'Hard Rules': '- Extends global `missing` is mentioned outside the contract.' });
   assert.deepEqual(checkSkills(skillsDir({ demo: elsewhere }), '--globals', globals), clean);
 });
@@ -190,6 +203,40 @@ test('--author checks only skills by that metadata.author', () => {
   );
   const quoted = skillsDir({ demo: skill({ author: '"zoroskr"', name: 'x' }) });
   assert.deepEqual(checkSkills(quoted, '--author', 'zoroskr'), problems('demo: name "x" does not match the folder'));
+});
+
+test('--author trims the name and still checks skills whose metadata.author is missing', () => {
+  const dir = skillsDir({
+    demo: skill({ name: 'wrong' }),
+    padded: skill({ author: '" zoroskr "', name: 'p' }),
+    unowned: skill({ name: 'unowned', author: null }),
+    empty: skill({ author: '""', name: 'empty' }),
+    other: skill({ name: 'nope', author: 'someone-else' }),
+  });
+  const expected = problems(
+    'demo: name "wrong" does not match the folder',
+    'empty: metadata.author is missing',
+    'padded: name "p" does not match the folder',
+    'unowned: metadata.author is missing',
+  );
+  assert.deepEqual(checkSkills(dir, '--author', 'zoroskr'), expected);
+  assert.deepEqual(checkSkills(dir, '--author', '  zoroskr '), expected);
+});
+
+test('CRLF frontmatter parses like LF', () => {
+  const crlf = text => text.replaceAll('\n', '\r\n');
+  assert.deepEqual(checkSkills(skillsDir({ demo: crlf(skill()) })), clean);
+  assert.deepEqual(checkSkills(skillsDir({ demo: crlf(skill()) }), '--author', 'zoroskr'), clean);
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: crlf(skill({ name: 'wrong', description: '"Does things."' })) }), '--author', 'zoroskr'),
+    problems('demo: name "wrong" does not match the folder', 'demo: description must start with "Trigger:"'),
+  );
+  const globals = skillsDir({ base: skill({ name: 'base' }) });
+  const extending = crlf(skill({}, { ...SECTIONS, 'Activation Contract': 'Extends global `base` and `gone`; load them first.' }));
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: extending }), '--globals', globals),
+    problems('demo: Extends global `gone` names no skill in the globals dir'),
+  );
 });
 
 test('usage errors exit 2', () => {
@@ -209,4 +256,10 @@ test('the package publishes both bins, sorted, with their files', () => {
   assert.deepEqual(Object.keys(bins), Object.keys(bins).toSorted());
   assert.ok(files.includes('bin/check-skills.js'));
   assert.deepEqual(files, files.toSorted());
+});
+
+test('--skip leaves named skills out of the check', () => {
+  const dir = skillsDir({ demo: skill({ name: 'wrong' }), vendor: '# No frontmatter\n', other: skill({ name: 'nope' }) });
+  assert.deepEqual(checkSkills(dir, '--skip', 'vendor', '--skip', 'other'), problems('demo: name "wrong" does not match the folder'));
+  assert.deepEqual(checkSkills(dir, '--skip', 'vendor,other'), problems('demo: name "wrong" does not match the folder'));
 });

@@ -310,13 +310,13 @@ npm exec --no -- zoroskr-check-skills ~/.agents/skills --author zoroskr
 
 It reports:
 
-- Frontmatter: `name` equal to the folder; `description` on one quoted line, at most 250 chars, starting with `Trigger:`; `license`, `metadata.author`, `metadata.version`; `metadata.tier` one of `tactical`, `domain`, `architectural`. A file without frontmatter is one problem.
+- Frontmatter: `name` equal to the folder; `description` on one quoted line, at most 250 chars, starting with `Trigger:`; `license`, `metadata.author`, `metadata.version` present and not empty; `metadata.tier` one of `tactical`, `domain`, `architectural`. A file without frontmatter is one problem. CRLF line endings parse like LF.
 - Body budget: the body after the frontmatter, estimated as UTF-8 bytes / 4 (rounded up), at most 1000 (`tactical`), 2000 (`domain`) or 3000 (`architectural`) tokens.
 - Sections: `## Activation Contract`, `## Hard Rules`, `## Decision Gates`, `## Execution Steps`, `## Output Contract` present, and those plus an optional `## References` in that order. Other `##` sections are allowed; headings inside fenced code are ignored.
 - PR and issue numbers in the description or body: `#<n>` outside code, `/pull/<n>`, `/issues/<n>`.
-- With `--globals <dir>`: an Activation Contract that names ``Extends global `<name>` `` must start with ``Extends global `<name>`; load it first.`` and every named global must have `<dir>/<name>/SKILL.md`.
+- With `--globals <dir>`: an Activation Contract that names ``Extends global `<name>` `` must start with ``Extends global `<name>`; load it first.`` and every named global must have `<dir>/<name>/SKILL.md`. Every name in a list is checked: ``Extends global `a`, `b` and `c` (forms); load them first.``
 
-`--author <name>` checks only skills whose `metadata.author` is `<name>` (others, and files without frontmatter, are skipped). Each problem is one line `<skill>: <problem>` on stdout, with exit code 1; no problem exits 0. A missing or extra argument, an unknown option or a directory that does not exist exits 2 with the reason on stderr.
+`--author <name>` skips skills whose `metadata.author` is present and is not `<name>` (both trimmed), and files without frontmatter. `--skip <name>` (repeatable or comma-separated) leaves those skill folders out, e.g. third-party skills sharing the directory; a skill with frontmatter but no `metadata.author` is still checked and reports `metadata.author is missing`. Each problem is one line `<skill>: <problem>` on stdout, with exit code 1; no problem exits 0. A missing or extra argument, an unknown option or a directory that does not exist exits 2 with the reason on stderr.
 
 ## Development
 

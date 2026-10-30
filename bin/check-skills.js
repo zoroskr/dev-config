@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const BIN = 'zoroskr-check-skills';
-const USAGE = `Usage: ${BIN} <skills-dir> [--globals <dir>] [--author <name>]\n`;
+const USAGE = `Usage: ${BIN} <skills-dir> [--globals <dir>] [--author <name>] [--skip <name>[,<name>]]\n`;
 const TIER_MAX = new Map([['tactical', 1000], ['domain', 2000], ['architectural', 3000]]);
 const SECTIONS = ['Activation Contract', 'Hard Rules', 'Decision Gates', 'Execution Steps', 'Output Contract', 'References'];
 const OPTIONAL_SECTIONS = new Set(['References']);
@@ -14,7 +14,9 @@ const QUOTED = /^(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*')$/u;
 const FENCE = /^\s*(?:```|~~~)/u;
 const ISSUE_HASH = /(?<![\w&/#])#\d+(?![\w-])/gu;
 const ISSUE_URL = [/\/pull\/\d+/gu, /\/issues\/\d+/gu];
-const EXTENDS = /Extends global `([^`]+)`/gu;
+const EXTENDS = /Extends global ([^;\n]*)/gu;
+const BACKTICKED_NAME = /^`([^`]+)`/u;
+const SEPARATOR = /^[\s,]*/u;
 
 class UsageError extends Error {}
 
@@ -22,13 +24,13 @@ function parseOptions(args) {
   try {
     const { values, positionals } = parseArgs({
       args,
-      options: { globals: { type: 'string' }, author: { type: 'string' } },
+      options: { globals: { type: 'string' }, author: { type: 'string' }, skip: { type: 'string', multiple: true } },
       allowPositionals: true,
     });
     if (positionals.length !== 1) {
       throw new UsageError(USAGE);
     }
-    return { dir: positionals[0], globals: values.globals, author: values.author };
+    return { dir: positionals[0], globals: values.globals, author: values.author, skip: new Set((values.skip ?? []).flatMap(value => value.split(',')).map(name => name.trim())) };
   } catch (error) {
     throw error instanceof UsageError ? error : new UsageError(USAGE);
   }
@@ -53,13 +55,14 @@ function unquote(value) {
 
 function parseSkill(text) {
   const lines = text.split('\n');
-  const end = lines.indexOf('---', 1);
-  if (lines[0] !== '---' || end === -1) {
+  const delimiters = lines.map(line => line.replace(/\r$/u, ''));
+  const end = delimiters.indexOf('---', 1);
+  if (delimiters[0] !== '---' || end === -1) {
     return null;
   }
   const fields = new Map();
   let parent = '';
-  for (const line of lines.slice(1, end)) {
+  for (const line of delimiters.slice(1, end)) {
     const match = /^( *)([A-Za-z][\w-]*):(.*)$/u.exec(line);
     if (match === null) {
       continue;
@@ -117,7 +120,7 @@ function frontmatterProblems(folder, fields) {
     }
   }
   for (const key of ['license', 'metadata.author', 'metadata.version', 'metadata.tier']) {
-    if (fields.get(key) === undefined || fields.get(key) === '') {
+    if (unquote(fields.get(key) ?? '').trim() === '') {
       problems.push(`${key} is missing`);
     }
   }
@@ -162,13 +165,26 @@ function referenceProblems(texts) {
   ]).map(reference => `PR/issue reference "${reference}"`);
 }
 
+function extendedNames(list) {
+  const names = [];
+  let rest = list.replaceAll(/\([^)]*\)/gu, '');
+  let match = BACKTICKED_NAME.exec(rest);
+  while (match !== null) {
+    names.push(match[1]);
+    rest = rest.slice(match[0].length).replace(SEPARATOR, '');
+    rest = rest.startsWith('and ') ? rest.slice('and '.length).trimStart() : rest;
+    match = BACKTICKED_NAME.exec(rest);
+  }
+  return names;
+}
+
 function extendsProblems(sections, globals) {
   const activation = sections.find(({ title }) => title === 'Activation Contract');
   if (globals === undefined || activation === undefined) {
     return [];
   }
   const text = activation.lines.join('\n');
-  const names = [...text.matchAll(EXTENDS)].map(([, name]) => name);
+  const names = [...text.matchAll(EXTENDS)].flatMap(([, list]) => extendedNames(list));
   if (names.length === 0) {
     return [];
   }
@@ -188,7 +204,8 @@ function skillProblems(folder, text, { globals, author }) {
     return author === undefined ? ['frontmatter is missing'] : [];
   }
   const { fields, body } = skill;
-  if (author !== undefined && unquote(fields.get('metadata.author') ?? '') !== author) {
+  const skillAuthor = unquote(fields.get('metadata.author') ?? '').trim();
+  if (author !== undefined && skillAuthor !== '' && skillAuthor !== author.trim()) {
     return [];
   }
   const sections = bodySections(body);
@@ -210,6 +227,7 @@ function main(args) {
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- skills directory from the command line
   return readdirSync(options.dir)
     .toSorted()
+    .filter(folder => !options.skip.has(folder))
     .map(folder => ({ folder, file: join(options.dir, folder, 'SKILL.md') }))
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- skill file inside the skills directory
     .filter(({ file }) => existsSync(file))
