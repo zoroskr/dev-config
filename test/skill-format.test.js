@@ -196,7 +196,7 @@ test('--globals checks that Extends global names an existing global', () => {
 
 test('--author checks only skills by that metadata.author', () => {
   const dir = skillsDir({ demo: skill({ name: 'wrong' }), other: skill({ name: 'nope', author: 'someone-else' }), bare: '# No frontmatter\n' });
-  assert.deepEqual(checkSkills(dir, '--author', 'zoroskr'), problems('demo: name "wrong" does not match the folder'));
+  assert.deepEqual(checkSkills(dir, '--author', 'zoroskr'), problems('bare: frontmatter is missing', 'demo: name "wrong" does not match the folder'));
   assert.deepEqual(
     checkSkills(dir),
     problems('bare: frontmatter is missing', 'demo: name "wrong" does not match the folder', 'other: name "nope" does not match the folder'),
@@ -221,6 +221,66 @@ test('--author trims the name and still checks skills whose metadata.author is m
   );
   assert.deepEqual(checkSkills(dir, '--author', 'zoroskr'), expected);
   assert.deepEqual(checkSkills(dir, '--author', '  zoroskr '), expected);
+});
+
+test('--author still reports a SKILL.md whose frontmatter does not parse', () => {
+  const dir = skillsDir({
+    bare: '# No frontmatter\n',
+    open: `---\nname: open\n\n${body()}`,
+    late: `\n${skill({ name: 'late' })}`,
+  });
+  const expected = problems('bare: frontmatter is missing', 'late: frontmatter is missing', 'open: frontmatter is missing');
+  assert.deepEqual(checkSkills(dir, '--author', 'zoroskr'), expected);
+  assert.deepEqual(checkSkills(dir), expected);
+});
+
+test('a leading UTF-8 BOM is stripped before the frontmatter', () => {
+  assert.deepEqual(checkSkills(skillsDir({ demo: `\uFEFF${skill()}` })), clean);
+  assert.deepEqual(checkSkills(skillsDir({ demo: `\uFEFF${skill()}` }), '--author', 'zoroskr'), clean);
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: `\uFEFF${skill({ name: 'wrong' })}` }), '--author', 'zoroskr'),
+    problems('demo: name "wrong" does not match the folder'),
+  );
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: `\uFEFF${skill({ name: 'wrong' })}`.replaceAll('\n', '\r\n') }), '--author', 'zoroskr'),
+    problems('demo: name "wrong" does not match the folder'),
+  );
+});
+
+test('trailing YAML comments outside quotes are stripped from scalar values', () => {
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: skill({ author: 'zoroskr # owner', name: 'wrong' }) }), '--author', 'zoroskr'),
+    problems('demo: name "wrong" does not match the folder'),
+  );
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: skill({ author: '"zoroskr" # owner', name: 'wrong' }) }), '--author', 'zoroskr'),
+    problems('demo: name "wrong" does not match the folder'),
+  );
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: skill({ author: '"" # TODO' }) }), '--author', 'zoroskr'),
+    problems('demo: metadata.author is missing'),
+  );
+  assert.deepEqual(checkSkills(skillsDir({ demo: skill({ author: '# TODO' }) })), problems('demo: metadata.author is missing'));
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: skill({ name: 'demo # folder', tier: 'tactical # small', description: '"Trigger: demo work. Does demo things." # short' }) })),
+    clean,
+  );
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: skill({ description: '"Trigger: color #fff stays. Does # things."' }) })),
+    clean,
+  );
+  assert.deepEqual(
+    checkSkills(skillsDir({ demo: skill({ name: '\'demo # quoted\' # comment' }) })),
+    problems('demo: name "demo # quoted" does not match the folder'),
+  );
+  assert.deepEqual(checkSkills(skillsDir({ demo: skill({ version: '1.0#rc' }) })), clean);
+});
+
+test('the README documents the global-repo check with --skip and without --author', () => {
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  assert.ok(readme.includes('npm exec --no -- zoroskr-check-skills ~/.agents/skills --skip <third-party>[,<third-party>]\n'));
+  assert.ok(!/zoroskr-check-skills [^\n]*--author/u.test(readme));
+  assert.ok(readme.includes('`--author <name>` is a filter that trusts the `metadata.author` field'));
 });
 
 test('CRLF frontmatter parses like LF', () => {

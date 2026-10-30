@@ -53,8 +53,27 @@ function unquote(value) {
   return value;
 }
 
+function withoutComment(raw) {
+  let quote = '';
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw.charAt(index);
+    if (quote === '"' && char === '\\') {
+      index += 1;
+    } else if (quote === '\'' && char === quote && raw.charAt(index + 1) === quote) {
+      index += 1;
+    } else if (quote !== '' && char === quote) {
+      quote = '';
+    } else if (quote === '' && (char === '"' || char === '\'') && raw.slice(0, index).trim() === '') {
+      quote = char;
+    } else if (quote === '' && char === '#' && (index === 0 || /\s/u.test(raw.charAt(index - 1)))) {
+      return raw.slice(0, index);
+    }
+  }
+  return raw;
+}
+
 function parseSkill(text) {
-  const lines = text.split('\n');
+  const lines = text.replace(/^\uFEFF/u, '').split('\n');
   const delimiters = lines.map(line => line.replace(/\r$/u, ''));
   const end = delimiters.indexOf('---', 1);
   if (delimiters[0] !== '---' || end === -1) {
@@ -69,7 +88,7 @@ function parseSkill(text) {
     }
     const [, indent, key, raw] = match;
     parent = indent === '' ? key : parent;
-    fields.set(indent === '' ? key : `${parent}.${key}`, raw.trim());
+    fields.set(indent === '' ? key : `${parent}.${key}`, withoutComment(raw).trim());
   }
   return { fields, body: lines.slice(end + 1).join('\n') };
 }
@@ -201,7 +220,7 @@ function extendsProblems(sections, globals) {
 function skillProblems(folder, text, { globals, author }) {
   const skill = parseSkill(text);
   if (skill === null) {
-    return author === undefined ? ['frontmatter is missing'] : [];
+    return ['frontmatter is missing'];
   }
   const { fields, body } = skill;
   const skillAuthor = unquote(fields.get('metadata.author') ?? '').trim();
